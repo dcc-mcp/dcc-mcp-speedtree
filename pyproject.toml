@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dcc-mcp-speedtree"
+version = "0.1.0"
+description = "Local-first DCC-MCP adapter for SpeedTree official capabilities"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{name = "loonghao", email = "hal.long@outlook.com"}]
+dependencies = ["dcc-mcp-core>=0.20.22,<1.0.0"]
+
+[project.scripts]
+dcc-mcp-speedtree = "dcc_mcp_speedtree.server:main"
+dcc-mcp-speedtree-doctor = "dcc_mcp_speedtree.runtime:main"
+
+[project.entry-points."dcc_mcp.adapters"]
+speedtree = "dcc_mcp_speedtree:SpeedTreeMcpServer"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dcc_mcp_speedtree = ["skills/**/*.md", "skills/**/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
