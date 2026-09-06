@@ -21,3 +21,7 @@ Set `DCC_MCP_SPEEDTREE_COMMAND_HOOK_DLL` only when an approved, version-matched 
 3. Verify generated materials, LODs, collision, and scene visibility in the target engine version.
 
 The adapter does not claim import success from file discovery alone.
+
+## Unreal-side opt-in configuration
+
+The companion UE project can provide a read-only SpeedTree preflight and an explicit configuration action. Its `configure-speedtree-support.py` script reports whether `DccMcpUnreal` and `SpeedTreeImporter` are enabled; pass `--apply` only after operator approval to add or enable the engine-provided importer entry. It writes a `.uproject.bak` before changing the descriptor. This prepares plugin discovery but does not replace the official SpeedTree export step.
