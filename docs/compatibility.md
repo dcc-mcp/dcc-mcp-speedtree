@@ -26,13 +26,13 @@ file discovery support does not imply verified export support.
 
 | Feature | Native ST9/ST route | FBX/OBJ route | Alembic/USD route |
 | --- | --- | --- | --- |
-| Geometry | Mesh import observed for ST9 | FBX mesh observed; OBJ import acknowledged | Alembic import acknowledged; USD target not checked |
+| Geometry | Three ST9 meshes read back in UE | FBX and OBJ geometry read back in Blender | Alembic and USD geometry read back in Blender |
 | Materials/textures | Engine importer generates materials | STMAT semantic maps retained; target shader conversion required | STMAT maps retained; shader conversion required |
-| Transparent leaves | Must inspect target opacity/two-sided shader | Opacity maps and two-sided metadata present; rendered result not checked | Same; cache import alone does not build leaf shaders |
-| LOD | Games preset requests all LODs; target counts need readback | Preset-dependent; no preservation claim for this VFX sample | No LOD preservation claim for this VFX sample |
+| Transparent leaves | Palm appearance checked after explicit UV/material repairs on a duplicate | Opacity maps and two-sided metadata present; rendered result not checked | Same; cache import alone does not build leaf shaders |
+| LOD | Palm has 3 UE mesh LODs: 8,498 / 5,396 / 2,346 triangles | Preset-dependent; no preservation claim for this VFX sample | No LOD preservation claim for this VFX sample |
 | Wind/animation | Runtime-specific; dynamic playback not checked | Static sample; no wind transfer claim. OBJ is static geometry | Static sample; animated cache export requires a separate preset/test |
 | Instances | No preservation claim | No preservation claim | No preservation claim |
-| Units/axes | Preset requests centimeter, X/V flip | Requested centimeter/Z-up; FBX returned scale 0.3048 and X rotation 90 degrees; effective world dimensions need target verification | Requested transforms recorded, effective target transforms not checked |
+| Units/axes | Explicit vertex conversion gives 12.34384 m on the repaired Palm duplicate | FBX encodes feet and gives 12.34384 m Blender height; OBJ needs explicit consumer normalization | USD encodes feet and gives the same Blender world dimensions; Alembic needs consumer normalization |
 | Editable generators | Remain in original SPM | Not transferred | Not transferred |
 
 Official references: [CLI](https://docs.unity3d.com/speedtree-modeler/manual/export-from-the-command-line.html),
@@ -55,7 +55,12 @@ UE 5.5 ST9 imports measured only 40.49815 cm tall. Its native ST9 factory path
 does not use the legacy TreeScale option. Source-unit conversion therefore
 requires a separately verified normalization step, not an assumed importer
 flag. The baseline native materials resolved textures but rendered fallback
-surfaces; correct leaf appearance is not accepted yet.
+surfaces. A separate Palm duplicate now renders correct foliage after material
+instance refresh, a corrected Subsurface map, and UV0 V inversion on all three
+LODs. Build-scale settings alone did not survive the UV rebuild consistently;
+explicit conversion of all three LODs' source vertices by 30.48 produced final
+bounds of 1,234.383705 cm with build and actor scales both 1. Collision scale and
+dynamic wind were not tested. See the [real capture and repair notes](showcase.md).
 
 Blender detailed checks also found six empty Alembic material node graphs and
 invalid OBJ normal image references with a trailing MTL bump option. Existing

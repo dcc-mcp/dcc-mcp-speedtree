@@ -4,6 +4,13 @@ Export licensed SpeedTree Modeler projects through its official command-line
 interface, then hand a verified asset bundle to another DCC-MCP adapter.
 No injected C++ hook is needed for file-based batch export.
 
+![Real SpeedTree source and Unreal Engine result](docs/images/speedtree-to-unreal.png)
+
+The same Palm asset in Modeler 10.1 and UE 5.5, using native SpeedTree
+materials after explicit unit, UV, and texture repairs on a duplicate.
+The final mesh height is 12.34384 m; collision scale and dynamic wind remain unverified.
+[Capture provenance and repair notes](docs/showcase.md).
+
 ## Start
 
 This is a source preview. Install the checkout with `python -m pip install -e .`,
