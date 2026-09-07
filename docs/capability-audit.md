@@ -1,0 +1,106 @@
+# Capability audit
+
+Audited against Modeler 10.1.0 on Windows, 2026-09-07. This adapter covers
+official file export and destination handoff, **not the whole Modeler**.
+`inspect_capabilities` reports implementation scope without requiring a GUI;
+it is not a live document or license probe.
+
+## Exposure and packaging
+
+Three packaged Skills contain eleven adapter tools. Core job/skill lifecycle
+and UI tools are shared infrastructure and are not counted as Modeler features.
+Every listed tool has a committed input/output object schema and script in the
+wheel. `scripts/check_wheel.py` installs the built wheel outside the checkout,
+checks the imported module origin, discovers and loads all three Skills, and
+calls the capability entry point. CI runs this gate after building the sdist
+and wheel. The repository remains a source preview; building a wheel does not
+mean it has been published to a package index.
+
+The audit also replaced ineffective top-level safety fields with standard MCP
+`annotations` hints. Read operations are now identified as read-only, while
+batch export remains destructive and asynchronous. A registry-level regression
+test and the installed-wheel gate check these annotations and all tool scripts.
+
+| Implementation | Typed tool (Skill prefix omitted) | Skill | Runtime evidence / boundary |
+| --- | --- | --- | --- |
+| Capability status | `inspect_capabilities` | discovery | Available without a GUI; previously only reachable through GUI runtime inspection |
+| Installed samples and presets | `discover_content` | discovery | Games and VFX presets; VFX counts now included |
+| Asset fingerprint | `inspect_asset` | discovery | File size/hash; no SPM generator parsing |
+| Preset properties | `inspect_preset` | discovery | Read-only INI sections, including requested animation options |
+| Export preflight | `plan_export` | discovery | Existing SPM/preset and new output; does not prove license or preset effectiveness |
+| Exact GUI binding | `inspect_runtime` | discovery | PID/HWND identity only; no live model inspection; separate GUI binding required |
+| Unreal descriptor | `inspect_unreal_project` | discovery | Explicit entries only; absent plugin entry is unknown, not disabled |
+| Official export | `export_batch` | export | Six formats exported; bounded batch, hashes, atomic manifest and partial failure evidence |
+| Batch progress | `export_status` | export | Per-tree status; no vendor-internal percentage or restart recovery |
+| File verification | `verify_export` | export | Hashes, headers, explicit STMAT references; not full binary dependency or animation acceptance |
+| Destination handoff | `plan_import` | export | Verified files and required target readback; no destination mutation |
+
+The routing-only `speedtree-official` Skill has no tools. It now declares the
+SpeedTree family and its discovery/export dependencies. Its repository mirror
+is retained for direct Skill consumers; the runtime reads the packaged copy.
+Core's Python API loads this routing guide, but CLI 0.20.22 with Core 0.20.21 reported a 502 for
+the zero-tool load even while the guide became loaded. This shared lifecycle
+issue is distinct from executable Skill loading and remains a shared runtime
+limitation; it is not masked by adding an artificial tool.
+`select_samples`, runtime lifecycle functions, hashing, and sidecar readers
+are library helpers, not missing independent editing features.
+
+## Feature limits
+
+| Feature | Official boundary reviewed | Adapter coverage | Acceptance |
+| --- | --- | --- | --- |
+| Modeling / generator graph | No editing commands in the reviewed Modeler CLI; no supported Modeler authoring SDK identified locally | Not implemented | No branch, leaf, generator, random seed, or live document edits |
+| Materials | CLI exports textures and STMAT; target scripts may reconstruct shaders | Sidecar inspection and file transport only | UE Palm required explicit material/UV repairs; no Modeler material editor |
+| LOD | Games presets can request existing source LODs | Preset inspection and export | Three UE Palm LODs read back; no LOD authoring or transition playback test |
+| Wind | VFX Wind preset requests point-cache animation; native games data is target-specific | Preset requests passed through and recorded | Dynamic output not established in the tests below; no Fan/generator parameter editing |
+| Collision | Authoring and target runtime are separate from file verification | No collision editing tool | Post-unit-conversion collision not accepted |
+| Batch cancellation | Adapter owns the launched CLI child; Core owns the job | Core DELETE job route, no duplicate job manager | Active child termination verified; source GUI preserved in the prior live test |
+| Import / plugin setup | Destination adapter and user authorization own configuration | Handoff only | No silent plugin install; target availability must be discovered |
+
+Unsupported-by-this-adapter does not mean the vendor product lacks the feature.
+Shader include files and an SDK export preset are not a Modeler authoring API.
+No undocumented process injection or guessed function signatures are used.
+
+## Wind investigation
+
+The installed `Wind.ini` requests wind, 30 FPS, five seconds, looping, no gusts,
+and the current source wind strength. The existing `inspect_preset` tool reads
+these settings, and `export_batch` records them as `requested_animation` while
+leaving `animation_validation=requires_target_time_samples`.
+
+Using that preset, both Games Palm and VFX Palm exported valid Alembic meshes.
+Blender's official importer evaluated frames 1, 16, 31, 61, 91, and 151. All
+position hashes were identical within each asset, with maximum displacement
+zero; no mesh-sequence modifier was created. Games Palm FBX export produced
+no MCX point-cache file. Moving the official options before the export command
+also produced no cache. These results establish failure to obtain dynamic
+output for these requests, not the root cause or universal lack of vendor wind
+support. Source wind configuration, preset application, and target runtime wind
+must be investigated separately. A static screenshot is not wind acceptance.
+
+A separate UE 5.5 diagnostic used the unchanged native ST9 mesh data and
+isolated material copies. The imported wind switches and packed wind UVs were
+present, but sampled default driving scalars were zero. Explicit nonzero
+material parameters produced changes in 45,699 and 45,305 pixels across two
+fixed-camera frame pairs, confined to the tree with no background changes.
+The stable zero-wind control changed zero pixels. This proves diagnostic GPU
+wind activity after target-side overrides, not correct source wind export,
+source fidelity, or approved artistic motion. The new twelve mesh/material/
+texture packages were saved and reloaded with valid references.
+
+The earlier static showcase was captured in a live editor session. On reopening
+the original baseline, some material packages were missing; that capture must
+not be used as proof of persistent material dependencies. The new diagnostic
+uses separately saved dependencies and leaves the original baseline unchanged.
+
+Official references: [Modeler CLI](https://docs.unity3d.com/speedtree-modeler/manual/export-from-the-command-line.html),
+[VFX export and animation](https://docs.unity3d.com/speedtree-modeler/manual/vfx-export-options.html).
+See [target compatibility](compatibility.md) for measured units and materials.
+
+## Cleanup scope
+
+Only identified test/lint/bytecode caches and empty benchmark directories are
+eligible for local cleanup after containment and ownership checks. Dirty source
+files, source assets, exported bundles, acceptance records, distributable
+archives, existing environments, and routing Skill mirrors are retained.
+Local cleanup receipts are not included in the public package.

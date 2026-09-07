@@ -29,6 +29,10 @@ project-owned `dcc-cua` / `ui-control` route with a fresh exact binding.
 
 ## Agent workflow
 
+Read the [capability audit](docs/capability-audit.md) for the complete tool chain
+and the limits of modeling, materials, LOD, wind, collision, and cancellation.
+Use `inspect_capabilities` for a machine-readable scope report without a GUI.
+
 1. `discover_content` locates installed SPM samples and Games/VFX presets;
    `inspect_preset` reports the selected settings.
 2. `plan_export` checks an SPM, preset, format, and **new** output directory.

@@ -88,6 +88,8 @@ def export_batch(source_paths, preset_path, output_dir, format="st9", timeout_se
         "preset": {"name": preset.name, **preset_hash},
         "requested_units": settings.get("TransformConvertUnit", "unknown"),
         "requested_transform": {k: v for k, v in settings.items() if k.startswith("Transform")},
+        "requested_animation": {k: v for k, v in settings.items() if k.startswith("Animation")},
+        "animation_validation": "requires_target_time_samples",
         "effective_units": "unverified",
         "preset_effectiveness": "requires_output_readback",
         "core_job_id": current_job_id(),

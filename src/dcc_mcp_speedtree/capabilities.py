@@ -45,12 +45,17 @@ def discover_official_content(speedtree_root: str | Path) -> dict[str, Any]:
     samples = _files(root / "samples", "*.spm") if (root / "samples").is_dir() else []
     presets_root = root / "export_presets" / "Games"
     presets = _files(presets_root, "*.ini") if presets_root.is_dir() else []
+    vfx_presets = _files(root / "export_presets" / "VFX", "*.ini")
     return {
         "root": str(root),
         "samples": samples,
         "game_export_presets": presets,
-        "vfx_export_presets": _files(root / "export_presets" / "VFX", "*.ini"),
-        "counts": {"samples": len(samples), "game_export_presets": len(presets)},
+        "vfx_export_presets": vfx_presets,
+        "counts": {
+            "samples": len(samples),
+            "game_export_presets": len(presets),
+            "vfx_export_presets": len(vfx_presets),
+        },
     }
 
 
@@ -173,10 +178,14 @@ def plan_export(
 
 
 def capability_status() -> dict[str, Any]:
-    """Describe capabilities implemented by this package."""
+    """Describe implementation coverage, without implying a live host probe."""
 
     integration = "unavailable"
     return {
+        "schema": "speedtree.capabilities.v1",
+        "scope": "official_file_export_and_handoff",
+        "full_modeler_coverage": False,
+        "live_probe_performed": False,
         "read_only_research": "available",
         "content_discovery": "available",
         "asset_inspection": "available",
@@ -186,4 +195,51 @@ def capability_status() -> dict[str, Any]:
         "mutating_operations": "official_cli_export",
         "batch_export": "available_with_configured_modeler",
         "authoritative_live_completion": "integration_unavailable",
+        "features": {
+            "batch_export": {
+                "implementation": "supported",
+                "route": "speedtree_export__export_batch",
+                "formats": ["st9", "st", "fbx", "obj", "abc", "usd"],
+                "requires": "configured licensed Modeler, existing SPM and preset, new output",
+            },
+            "progress": {
+                "implementation": "supported",
+                "route": "speedtree_export__export_status",
+                "limit": "per-tree progress, not vendor internal percentage",
+            },
+            "cancellation": {
+                "implementation": "supported_via_core",
+                "route": "DELETE /v1/jobs/{id} on the owning service",
+                "limit": "active owned child only; no reconstruction after service restart",
+            },
+            "materials": {
+                "implementation": "export_and_sidecar_inspection_only",
+                "route": "speedtree_export__export_batch",
+                "limit": "no Modeler material editing or target shader reconstruction",
+            },
+            "lod": {
+                "implementation": "preset_driven_export_only",
+                "route": "speedtree_discovery__inspect_preset",
+                "limit": "no generator or LOD editing; target must read back actual LODs",
+            },
+            "wind": {
+                "implementation": "preset_driven_request_only",
+                "route": "speedtree_export__export_batch",
+                "limit": "wind preset requests are recorded, not proof of animated output; no Fan or generator editing",
+            },
+            "collision": {
+                "implementation": "not_implemented",
+                "limit": "no collision authoring or post-conversion collision validation",
+            },
+            "modeling": {
+                "implementation": "not_implemented",
+                "official_interface": "not_documented_in_reviewed_modeler_cli",
+                "limit": "no generator graph, branch, leaf, seed, or live document editing",
+            },
+            "target_import": {
+                "implementation": "handoff_only",
+                "route": "speedtree_export__plan_import",
+                "limit": "destination adapter owns import, plugin consent, and acceptance",
+            },
+        },
     }

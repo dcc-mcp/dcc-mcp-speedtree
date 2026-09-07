@@ -20,3 +20,10 @@ Discover and fingerprint distinct Games SPM samples. For UE 5.5 prefer the insta
 Pass each mesh path from the returned manifest to dcc-mcp-unreal's discovered import_asset tool with a separate destination folder and replace_existing=false. Keep all files in each per-tree directory beside the mesh. Read back each imported mesh and its dependencies. Verify scale/orientation, materials/textures, and applicable LOD/wind in Unreal. Missing files, input changes, failed exit, or timeout stop the batch. Never copy SPM files into Content as if they were imported assets.
 
 CLI work needs no GUI or injected hook. UI inspection uses only dcc-cua/ui-control with exact target binding. A license prompt requires the operator; do not retry via another integration.
+
+For wind, inspect the installed VFX Wind preset and preserve the source SPM.
+Export requests record `requested_animation`; they do not establish that the
+file contains animation. Require a target cache or runtime readback at multiple
+times with changed vertex positions or rendered wind before accepting motion.
+Modeler Fan/generator wind editing is not implemented. The tested Modeler 10.1
+Palm exports did not produce dynamic cache motion despite wind preset requests.

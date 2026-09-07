@@ -23,7 +23,7 @@ def test_discover_content_returns_categorized_files(tmp_path: Path):
     result = discover_official_content(tmp_path)
 
     assert result["root"] == str(tmp_path.resolve())
-    assert result["counts"] == {"samples": 1, "game_export_presets": 1}
+    assert result["counts"] == {"samples": 1, "game_export_presets": 1, "vfx_export_presets": 0}
     assert result["samples"] == [str((samples / "Pine.spm").resolve())]
 
 
@@ -97,6 +97,10 @@ def test_capability_status_fails_closed_for_live_control():
     assert result["read_only_research"] == "available"
     assert result["live_in_process"] == "integration_unavailable"
     assert result["mutating_operations"] == "official_cli_export"
+    assert result["full_modeler_coverage"] is False
+    assert result["live_probe_performed"] is False
+    assert result["features"]["modeling"]["implementation"] == "not_implemented"
+    assert result["features"]["wind"]["implementation"] == "preset_driven_request_only"
 
 
 def test_discovery_skill_is_packaged_with_scripts():
@@ -109,6 +113,7 @@ def test_discovery_skill_is_packaged_with_scripts():
         "discover_content",
         "inspect_asset",
         "inspect_runtime",
+        "inspect_capabilities",
         "inspect_preset",
         "inspect_unreal_project",
         "plan_export",
