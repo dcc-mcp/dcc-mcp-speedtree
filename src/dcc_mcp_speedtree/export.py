@@ -11,7 +11,10 @@ import os
 import subprocess
 from pathlib import Path
 
+from dcc_mcp_core.cancellation import DccMcpCancelledError, check_cancelled, current_job_id
+
 from .bundle import material_dependencies, validate_mesh_header
+from .process import run_modeler
 
 FORMATS = {"st9", "st", "fbx", "obj", "abc", "usd"}
 
@@ -83,8 +86,11 @@ def export_batch(source_paths, preset_path, output_dir, format="st9", timeout_se
         "exporter": {"name": exe.name, **exe_hash},
         "mode": mode,
         "preset": {"name": preset.name, **preset_hash},
-        "units": settings.get("TransformConvertUnit", "unknown"),
-        "transform": {k: v for k, v in settings.items() if k.startswith("Transform")},
+        "requested_units": settings.get("TransformConvertUnit", "unknown"),
+        "requested_transform": {k: v for k, v in settings.items() if k.startswith("Transform")},
+        "effective_units": "unverified",
+        "preset_effectiveness": "requires_output_readback",
+        "core_job_id": current_job_id(),
         "items": [],
         "target_validation": {"status": "not_run"},
         "requested_count": len(sources),
@@ -110,6 +116,7 @@ def export_batch(source_paths, preset_path, output_dir, format="st9", timeout_se
         report["items"].append(item)
         save()
         try:
+            check_cancelled()
             if (
                 fingerprint(source) != identity
                 or fingerprint(preset) != preset_hash
@@ -117,7 +124,7 @@ def export_batch(source_paths, preset_path, output_dir, format="st9", timeout_se
             ):
                 raise ValueError("Input changed during batch")
             with (folder / "export.log").open("wb") as log:
-                result = subprocess.run(
+                result = run_modeler(
                     [
                         str(exe),
                         command,
@@ -128,10 +135,7 @@ def export_batch(source_paths, preset_path, output_dir, format="st9", timeout_se
                     ],
                     cwd=str(exe.parent),
                     stdout=log,
-                    stderr=subprocess.STDOUT,
                     timeout=timeout_seconds,
-                    shell=False,
-                    check=False,
                 )
             item["exit_code"] = result.returncode
             if result.returncode != 0:
@@ -157,6 +161,8 @@ def export_batch(source_paths, preset_path, output_dir, format="st9", timeout_se
                 item["dependency_validation"] = "pending_target_import"
         except subprocess.TimeoutExpired:
             item["status"] = "timeout"
+        except DccMcpCancelledError:
+            item["status"] = "cancelled"
         except (OSError, ValueError) as error:
             item["status"] = "failed"
             item["error_type"] = type(error).__name__
@@ -175,8 +181,26 @@ def export_batch(source_paths, preset_path, output_dir, format="st9", timeout_se
         else "failed"
     )
     report["requested_count"] = len(sources)
+    if report["items"][-1]["status"] == "cancelled":
+        report["status"] = "cancelled"
     save()
     return {**report, "manifest_path": str(report_path)}
+
+
+def export_status(manifest_path):
+    """Read atomic batch progress while the core job is running."""
+    path = Path(manifest_path).resolve(strict=True)
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if report.get("schema") != "speedtree.export-batch.v1":
+        raise ValueError("Unsupported export manifest")
+    return {
+        "status": report["status"],
+        "core_job_id": report.get("core_job_id"),
+        "requested": report["requested_count"],
+        "completed": sum(item["status"] == "exported" for item in report["items"]),
+        "items": [{"mesh": item["mesh"], "status": item["status"]} for item in report["items"]],
+        "target_validation": {"status": "not_run"},
+    }
 
 
 def verify_export(manifest_path):

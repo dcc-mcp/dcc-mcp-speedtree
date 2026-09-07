@@ -6,7 +6,8 @@ No injected C++ hook is needed for file-based batch export.
 
 ## Start
 
-Install `dcc-mcp-speedtree`, then configure the installed Modeler executable:
+This is a source preview. Install the checkout with `python -m pip install -e .`,
+then configure the installed Modeler executable:
 
 ```powershell
 $env:DCC_MCP_SPEEDTREE_EXECUTABLE = "C:/Applications/SpeedTree/SpeedTree_Modeler.exe"
@@ -27,9 +28,10 @@ project-owned `dcc-cua` / `ui-control` route with a fresh exact binding.
 3. `export_batch` exports 1–16 SPMs through `-export_game` or `-export`, with
    `-export_options`. Supported extensions are `st9`, `st`, `fbx`, `obj`,
    `abc`, and `usd`; availability still depends on product version/license.
-4. `verify_export` checks the recorded file hashes before handoff. Each tree
+4. `export_status` reads progress while Core runs the job; Core cancellation
+   stops the owned export process (`DELETE /v1/jobs/{id}` on the owning service). `verify_export` checks the recorded file hashes before handoff. Each tree
    lives in its own directory with its textures and material sidecar.
-5. Discover the destination adapter's importer, import into a new destination,
+5. `plan_import` prepares a verified handoff. Discover the destination adapter's importer, import into a new destination,
    and read back geometry, materials, dependencies, transforms, and animation.
 
 The [asset bundle contract](docs/asset-bundle.md) separates export evidence from

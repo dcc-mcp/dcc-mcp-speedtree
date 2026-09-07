@@ -6,7 +6,7 @@ manifest directory. Move the whole bundle; resolve paths under that directory
 and reject traversal. The tool response includes a local absolute manifest path.
 
 The producer records exporter/source/preset SHA256 and byte counts, requested
-format and preset mode, requested transform settings, requested tree count,
+format and preset mode, requested_units and requested_transform settings, requested tree count,
 per-item status/exit code, and an inventory of emitted files. These hashes
 identify inputs and detect changes; they do not certify licensing or trust.
 Each successful item has a recognizable mesh header and nonempty output.
@@ -37,3 +37,13 @@ ST9/ST, Blender interchange import for FBX/OBJ/Alembic/USD, and the discovered
 Maya or 3ds Max importer for a compatible format. Missing plugins yield a
 reviewable configuration plan; apply only within the target's user consent
 contract. Importing a mesh never restores the editable SpeedTree generator.
+
+## Jobs and cancellation
+
+The export tool runs as an asynchronous core job in process. Poll its returned
+core job id using the advertised core polling contract; never resubmit a timed
+out launch to poll it. `export_status` reads the atomic manifest for completed
+count and per-tree states during execution. Cancel through the owning service's documented `DELETE /v1/jobs/{id}` endpoint or the gateway cancellation contract. Core cancellation is checked
+before launch, between trees, and at most every 250 ms while waiting on the
+owned exporter. Cancellation or timeout kills and reaps only that child,
+leaves the partial output/manifest for diagnosis, and prevents the next tree.

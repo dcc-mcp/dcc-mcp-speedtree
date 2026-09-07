@@ -21,13 +21,13 @@ def request_files(tmp_path, monkeypatch):
 
 
 def fake_export(argv, **kwargs):
-    assert kwargs["shell"] is False
+    assert argv[1] in {"-export_game", "-export"}
     Path(argv[2]).write_bytes(b"SpeedTree9______payload")
     return SimpleNamespace(returncode=0)
 
 
 def test_inventory_detects_changed_and_missing_files(request_files, monkeypatch):
-    monkeypatch.setattr(subprocess, "run", fake_export)
+    monkeypatch.setattr("dcc_mcp_speedtree.export.run_modeler", fake_export)
     result = export_batch(*request_files)
     assert verify_export(result["manifest_path"])["verified"]
     mesh = Path(request_files[2]) / result["items"][0]["mesh"]
@@ -54,7 +54,7 @@ def test_failed_export_never_reports_success(request_files, monkeypatch, failure
             Path(argv[2]).write_bytes(b"not a tree")
         return SimpleNamespace(returncode=3 if failure == "exit" else 0)
 
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr("dcc_mcp_speedtree.export.run_modeler", run)
     result = export_batch(*request_files)
     assert result["status"] == "failed"
     assert result["items"][0]["status"] == expected
@@ -62,7 +62,9 @@ def test_failed_export_never_reports_success(request_files, monkeypatch, failure
 
 
 def test_existing_output_and_duplicate_input_rejected(request_files, monkeypatch):
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("must not launch"))
+    monkeypatch.setattr(
+        "dcc_mcp_speedtree.export.run_modeler", lambda *a, **k: pytest.fail("must not launch")
+    )
     sources, preset, output = request_files
     with pytest.raises(ValueError, match="Duplicate"):
         export_batch(sources * 2, preset, output)
@@ -83,14 +85,14 @@ def test_partial_batch_stops_and_keeps_evidence(request_files, monkeypatch):
             return SimpleNamespace(returncode=2)
         return fake_export(argv, **kwargs)
 
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr("dcc_mcp_speedtree.export.run_modeler", run)
     result = export_batch(sources + [str(second)], preset, output)
     assert [i["status"] for i in result["items"]] == ["exported", "exporter_failed"]
     assert not verify_export(result["manifest_path"])["verified"]
 
 
 def test_manifest_path_escape_and_empty_batch(request_files, monkeypatch):
-    monkeypatch.setattr(subprocess, "run", fake_export)
+    monkeypatch.setattr("dcc_mcp_speedtree.export.run_modeler", fake_export)
     result = export_batch(*request_files)
     path = Path(result["manifest_path"])
     data = json.loads(path.read_text())
@@ -113,7 +115,7 @@ def test_vfx_uses_official_vfx_command(request_files, monkeypatch):
         Path(argv[2]).write_bytes(b"Kaydara FBX Binary  payload")
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr("dcc_mcp_speedtree.export.run_modeler", run)
     assert export_batch(sources, preset, output, "fbx")["status"] == "exported"
 
 
@@ -123,14 +125,14 @@ def test_input_changed_during_export_fails(request_files, monkeypatch):
         Path(argv[3]).write_bytes(b"changed source")
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr("dcc_mcp_speedtree.export.run_modeler", run)
     assert export_batch(*request_files)["items"][0]["status"] == "input_changed"
 
 
 def test_handoff_uses_target_adapter_and_rejects_native_in_blender(request_files, monkeypatch):
     from dcc_mcp_speedtree.handoff import plan_import
 
-    monkeypatch.setattr(subprocess, "run", fake_export)
+    monkeypatch.setattr("dcc_mcp_speedtree.export.run_modeler", fake_export)
     result = export_batch(*request_files)
     plan = plan_import(result["manifest_path"], "unreal")
     assert plan["target_status"] == "requires_capability_discovery"

@@ -12,9 +12,9 @@ where present. Vendor assets and raw local logs are not distributed here.
 | ST9 | Palm, Oak, Conifer + textures | 3 StaticMeshes and material dependencies read back | Requires conversion | Requires conversion |
 | ST | Palm + textures, through SpeedTree MCP | Not imported in this run | Requires conversion | Requires conversion |
 | FBX | Palm; 6 materials, 37 map references | Not checked | Mesh read back: 6,081 vertices, 8,498 faces, 6 material slots | Not checked |
-| OBJ | Palm; 6 materials, 37 map references | Not checked | Import completed; detailed readback pending | Not checked |
-| Alembic | Palm; 6 materials, 37 map references | Not checked | Import completed; detailed readback pending | Not checked |
-| USD | Palm; 6 materials, 37 map references | Not checked | Not checked in this adapter's baseline | Not checked |
+| OBJ | Palm; 6 materials, 37 map references | Not checked | Mesh read back: 6,081 vertices, 8,498 faces | Not checked |
+| Alembic | Palm; 6 materials, 37 map references | Not checked | Mesh read back: 6,081 vertices, 8,498 faces | Not checked |
+| USD | Palm; 6 materials, 37 map references | Not checked | Mesh read back: 6,081 vertices, 8,498 faces | Not checked |
 
 Houdini/Unity handoffs use the same bundle contract; destination validation is
 owned by their adapters and is not claimed by this baseline. USD, Alembic, and
@@ -41,3 +41,25 @@ Official references: [CLI](https://docs.unity3d.com/speedtree-modeler/manual/exp
 [Unreal integration](https://docs.unity3d.com/speedtree-modeler/manual/import-to-unreal.html).
 The feature table distinguishes configured intent and measured results; it
 must not be interpreted as an animation, visual, or game-runtime acceptance.
+
+## Acceptance findings that remain open
+
+All four interchange formats reconstruct the same Palm vertex geometry after
+explicit mathematical unit/axis normalization. FBX and USD encode feet and
+produce a 12.34384 m world height in Blender. OBJ and Alembic need consumer
+unit/axis configuration. This run's preset requests for centimeter/Z-up were
+not reflected in the output metadata; changing CLI argument order or setting
+TransformScale=30.48 did not change the ST9 bounds.
+
+UE 5.5 ST9 imports measured only 40.49815 cm tall. Its native ST9 factory path
+does not use the legacy TreeScale option. Source-unit conversion therefore
+requires a separately verified normalization step, not an assumed importer
+flag. The baseline native materials resolved textures but rendered fallback
+surfaces; correct leaf appearance is not accepted yet.
+
+Blender detailed checks also found six empty Alembic material node graphs and
+invalid OBJ normal image references with a trailing MTL bump option. Existing
+sidecar references are complete, but this is not equivalent to correct target
+shader reconstruction. Vendor-provided DCC importer scripts may help, but
+must be discovered in the local installation and checked for target-version
+compatibility; they are not redistributed by this adapter.

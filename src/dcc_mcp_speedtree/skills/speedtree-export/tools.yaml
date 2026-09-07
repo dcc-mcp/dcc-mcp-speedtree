@@ -1,4 +1,19 @@
 tools:
+- name: export_status
+  description: Read per-tree progress and the core job identity from an atomic export manifest.
+  source_file: scripts/export_status.py
+  execution: sync
+  affinity: any
+  read_only: true
+  destructive: false
+  idempotent: true
+  input_schema:
+    type: object
+    required: [manifest_path]
+    properties:
+      manifest_path: {type: string, minLength: 1}
+    additionalProperties: false
+  output_schema: {type: object}
 - name: plan_import
   description: Verify a bundle and prepare a target adapter handoff without importing or configuring plugins.
   source_file: scripts/plan_import.py
@@ -20,7 +35,8 @@ tools:
   description: Export selected SPM trees using the official Games or VFX CLI with input hashes
     and new per-tree output folders.
   source_file: scripts/export_batch.py
-  execution: sync
+  execution: async
+  requires_in_process: true
   affinity: any
   read_only: false
   destructive: true
