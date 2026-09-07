@@ -1,0 +1,15 @@
+{
+  "schema": "dcc-showcase-provenance.v1",
+  "source_application": "SpeedTree Modeler 10.1.0",
+  "source_asset": "Palm_Desktop.spm",
+  "source_spm_sha256": "0714a3551742223caf48e6e0b4e48e75d0a006a3e17e54d66031bb1f549fe660",
+  "source_capture_sha256": "b5d7cfea524054c2ae3bb7a4b798971c9533afad1309ca3c415ca23f388cb2aa",
+  "target_application": "Unreal Engine 5.5.4",
+  "target_render_sha256": "2fecab763cee129c4fffc3c20df5a41192fc08c055f93005e641734c7f7bd581",
+  "target_kind": "ST9 mesh duplicate with native SpeedTreeMaster materials, refreshed instances, corrected Subsurface map and UV0 V flip across three LODs; all LOD vertex positions converted from feet to centimeters",
+  "dynamic_wind_verified": false,
+  "capture_composition": "Original image pixels embedded and clipped in a labeled SVG; no generative imagery.",
+  "final_dimensions_verified": true,
+  "collision_scale_verified": false,
+  "final_mesh_height_cm": 1234.383705
+}
