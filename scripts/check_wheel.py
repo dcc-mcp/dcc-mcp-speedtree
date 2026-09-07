@@ -14,9 +14,9 @@ from pathlib import Path
 import dcc_mcp_speedtree
 from dcc_mcp_speedtree.server import SpeedTreeMcpServer
 
-root = Path.cwd()
+root = Path.cwd().resolve()
 package = Path(dcc_mcp_speedtree.__file__).resolve().parent
-assert package.is_relative_to(root), package
+assert package.is_relative_to(root), (package, root)
 skills = package / "skills"
 assert (skills / "speedtree-official/metadata/depends.md").is_file()
 expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0}
