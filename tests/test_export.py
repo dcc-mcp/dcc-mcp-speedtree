@@ -26,6 +26,15 @@ def fake_export(argv, **kwargs):
     return SimpleNamespace(returncode=0)
 
 
+def test_wind_request_is_not_dynamic_animation_acceptance(request_files, monkeypatch):
+    Path(request_files[1]).write_text("[General]\nType=Game\nAnimationWind=true\nAnimationFPS=30\n")
+    monkeypatch.setattr("dcc_mcp_speedtree.export.run_modeler", fake_export)
+    result = export_batch(*request_files)
+    assert result["status"] == "exported"
+    assert result["requested_animation"] == {"AnimationWind": "true", "AnimationFPS": "30"}
+    assert result["animation_validation"] == "requires_target_time_samples"
+
+
 def test_inventory_detects_changed_and_missing_files(request_files, monkeypatch):
     monkeypatch.setattr("dcc_mcp_speedtree.export.run_modeler", fake_export)
     result = export_batch(*request_files)

@@ -1,6 +1,13 @@
 ---
 name: speedtree-official
 description: Route SpeedTree work through documented Modeler capabilities and verified asset exports.
+metadata:
+  dcc-mcp:
+    dcc: speedtree
+    layer: domain
+    version: "0.1.0"
+    search-hint: "SpeedTree official workflow capabilities coverage limitations batch export"
+    depends: [speedtree-discovery, speedtree-export]
 ---
 
 # Official SpeedTree capabilities
