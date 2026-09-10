@@ -19,7 +19,7 @@ package = Path(dcc_mcp_speedtree.__file__).resolve().parent
 assert package.is_relative_to(root), (package, root)
 skills = package / "skills"
 assert (skills / "speedtree-official/metadata/depends.md").is_file()
-expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0}
+expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0, "speedtree-nodes": 5}
 exe = root / "SpeedTree_Modeler.exe"
 exe.write_bytes(b"not executable; metadata-only fixture")
 server = SpeedTreeMcpServer(executable=str(exe), enable_gateway_failover=False,
@@ -38,13 +38,23 @@ try:
         script = Path(action["source_file"]).resolve()
         assert script.is_file() and script.is_relative_to(package), script
         mutating = action["name"] == "speedtree_export__export_batch"
-        assert action["annotations"]["read_only_hint"] is not mutating
+        assert action["annotations"]["read_only_hint"] is not (mutating or action["name"] == "speedtree_nodes__edit_graph")
         assert action["annotations"]["destructive_hint"] is mutating
     result = runpy.run_path(str(skills / "speedtree-discovery/scripts/inspect_capabilities.py"))["main"]()
     assert result["success"] and result["context"]["full_modeler_coverage"] is False
     assert result["context"]["live_probe_performed"] is False
+    source = root / "source.spm"
+    source.write_text('<SpeedTree Version="8"><Generators><Generator Type="Tree">'
+                      '<GUID>root</GUID><Name>Tree</Name><Level>0</Level><Properties/>'
+                      '</Generator></Generators></SpeedTree>', encoding="utf-8")
+    node_result = runpy.run_path(str(skills / "speedtree-nodes/scripts/edit_graph.py"))["main"](
+        source_path=str(source), output_path=str(root / "edited.spm"),
+        operations=[{"op": "rename", "node_id": "root", "name": "Verified tree"}])
+    assert node_result["success"], node_result
+    assert node_result["context"]["graph"]["generators"][0]["name"] == "Verified tree"
+    assert node_result["context"]["source_modified"] is False
     print(json.dumps({"wheel_import": True, "discovered_and_loaded": expected,
-                      "capability_entry_point": "passed", "host_probe": False}))
+                      "capability_entry_point": "passed", "node_entry_point": "passed", "host_probe": False}))
 finally:
     server.stop()
 """
@@ -60,6 +70,10 @@ def main():
             "docs/capability-audit.md",
             "docs/images/speedtree-to-unreal.png",
             "scripts/check_wheel.py",
+            "scripts/build_node_showcases.py",
+            "scripts/verify_node_showcases.py",
+            "docs/native-capability-matrix.md",
+            "docs/images/native-node-workflow.gif",
         ):
             assert any(name.endswith("/" + relative) for name in names), relative
     with tempfile.TemporaryDirectory(prefix="speedtree-wheel-") as temp:

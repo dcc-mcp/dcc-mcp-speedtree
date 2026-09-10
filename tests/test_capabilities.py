@@ -96,10 +96,10 @@ def test_capability_status_fails_closed_for_live_control():
 
     assert result["read_only_research"] == "available"
     assert result["live_in_process"] == "integration_unavailable"
-    assert result["mutating_operations"] == "official_cli_export"
+    assert result["mutating_operations"] == "official_cli_export_and_copy_on_write_graph_edit"
     assert result["full_modeler_coverage"] is False
     assert result["live_probe_performed"] is False
-    assert result["features"]["modeling"]["implementation"] == "not_implemented"
+    assert result["features"]["modeling"]["implementation"] == "experimental_file_graph_authoring"
     assert result["features"]["wind"]["implementation"] == "preset_driven_request_only"
 
 

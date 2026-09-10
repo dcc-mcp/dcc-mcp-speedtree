@@ -183,7 +183,7 @@ def capability_status() -> dict[str, Any]:
     integration = "unavailable"
     return {
         "schema": "speedtree.capabilities.v1",
-        "scope": "official_file_export_and_handoff",
+        "scope": "file_authoring_export_and_handoff",
         "full_modeler_coverage": False,
         "live_probe_performed": False,
         "read_only_research": "available",
@@ -192,7 +192,7 @@ def capability_status() -> dict[str, Any]:
         "export_planning": "available",
         "live_in_process": "integration_unavailable",
         "live_integration": integration,
-        "mutating_operations": "official_cli_export",
+        "mutating_operations": "official_cli_export_and_copy_on_write_graph_edit",
         "batch_export": "available_with_configured_modeler",
         "authoritative_live_completion": "integration_unavailable",
         "features": {
@@ -225,16 +225,31 @@ def capability_status() -> dict[str, Any]:
             "wind": {
                 "implementation": "preset_driven_request_only",
                 "route": "speedtree_export__export_batch",
-                "limit": "wind preset requests are recorded, not proof of animated output; no Fan or generator editing",
+                "limit": "wind preset requests and serialized generator edits are not proof of animated output; no Fan editing",
             },
             "collision": {
                 "implementation": "not_implemented",
                 "limit": "no collision authoring or post-conversion collision validation",
             },
             "modeling": {
-                "implementation": "not_implemented",
+                "implementation": "experimental_file_graph_authoring",
+                "route": "speedtree_nodes__edit_graph",
                 "official_interface": "not_documented_in_reviewed_modeler_cli",
-                "limit": "no generator graph, branch, leaf, seed, or live document editing",
+                "operations": [
+                    "add",
+                    "duplicate",
+                    "remove",
+                    "connect",
+                    "disconnect",
+                    "rename",
+                    "set_hidden",
+                    "set_property",
+                ],
+                "limit": (
+                    "SPM/STT file graph edits require Modeler reload and regeneration; "
+                    "the observed XML format is not a published authoring SDK; "
+                    "no live document or individual generated-node editing"
+                ),
             },
             "target_import": {
                 "implementation": "handoff_only",

@@ -1,0 +1,87 @@
+{
+  "schema": "speedtree.node-acceptance.v1",
+  "status": "passed",
+  "native_export": "Modeler CLI",
+  "ui_automation": false,
+  "stages": [
+    {
+      "source": "01-trunk.spm",
+      "vertices": 77,
+      "faces": 140,
+      "obj_sha256": "c1680b3a3f7c8fa39fce7f8ddafc5ceb6f6a62431e290584a7edf7c6160796a1",
+      "positions_sha256": "b0c7a8c341d5aad1498265a2fa1f58753630f479c3768fa2727caa09f7ac9914"
+    },
+    {
+      "source": "02-primary-branches.spm",
+      "vertices": 693,
+      "faces": 1252,
+      "obj_sha256": "d295ef3cdbb1ff1f53acf13d5f6902f70d6cbbb55c662867ce1993bfef9b5bfc",
+      "positions_sha256": "7056ff511d97246d3a8df73f775fc14b4c5ae8f118bc77a807f1c3a8063f8df8"
+    },
+    {
+      "source": "03-drooping-branches.spm",
+      "vertices": 1908,
+      "faces": 3574,
+      "obj_sha256": "4e7d356d1739a2801dba06a4d6a3a50529e250b7a127c06c5d4b99cad94b2d5e",
+      "positions_sha256": "30e3bd6e401e02912fad6cd8f159ef40f5513abe050e339be60a4a5eda763e05"
+    },
+    {
+      "source": "04-leaves.spm",
+      "vertices": 7092,
+      "faces": 6166,
+      "obj_sha256": "46196379a334a7f4a003148112038aeb802628557aabdefb0d1cc0c59692b207",
+      "positions_sha256": "ffc424987aaa199e2ed65a03fd4dff05f755c941e4d5023f11b0bcc545f73ca1"
+    },
+    {
+      "source": "01-stalks.spm",
+      "vertices": 15390,
+      "faces": 29160,
+      "obj_sha256": "ab01ce26abb5d34490f9a5ef5bede8feb97a28eb4764333eb7bdddf33c7d04b1",
+      "positions_sha256": "d52d623d4379362487efee57b251323afcd9762e2b75e1385e57c24705171c7a"
+    },
+    {
+      "source": "02-blades.spm",
+      "vertices": 27540,
+      "faces": 59400,
+      "obj_sha256": "20a25cc99f2659b418dedf398439838165b9b84864e33480ab9b94c1a9473d06",
+      "positions_sha256": "3e8355755a4020feae8ac7998b0f388e1114e0098c080a1bb5b5d26436081296"
+    },
+    {
+      "source": "03-tapered-clump.spm",
+      "vertices": 27540,
+      "faces": 59400,
+      "obj_sha256": "5792d72ef504444784fefa62b197232055f1712cf5315762455b33a482042676",
+      "positions_sha256": "e297434e0ad5d3e85e95eab08b94fd97a85f4d84791dc48fad3c17a417494d51"
+    }
+  ],
+  "operation_checks": [
+    {
+      "source": "removed.spm",
+      "vertices": 1908,
+      "faces": 3574,
+      "obj_sha256": "739b69b81069580235d85519c79ccb7c4f21b5b449a12ef84fd53fc49ddd1ed5",
+      "positions_sha256": "30e3bd6e401e02912fad6cd8f159ef40f5513abe050e339be60a4a5eda763e05"
+    },
+    {
+      "source": "disconnected.spm",
+      "vertices": 1908,
+      "faces": 3574,
+      "obj_sha256": "15df39e2afdb645ace86e2c68ddef3db229bd0053861a812cb4b77f992c86396",
+      "positions_sha256": "30e3bd6e401e02912fad6cd8f159ef40f5513abe050e339be60a4a5eda763e05"
+    },
+    {
+      "source": "reconnected.spm",
+      "vertices": 7092,
+      "faces": 6166,
+      "obj_sha256": "0adf1e988409be911ca760c4426c58bcce7b12a8f02dc591e8698b565983cfd6",
+      "positions_sha256": "ffc424987aaa199e2ed65a03fd4dff05f755c941e4d5023f11b0bcc545f73ca1"
+    },
+    {
+      "source": "duplicated.spm",
+      "vertices": 12276,
+      "faces": 8758,
+      "obj_sha256": "21958920b9e0abd52fca2ed108674c4ba6221864ed8580d2289ca0e4629cd529",
+      "positions_sha256": "16763675ad39fec9546132582f41228290dcf2b9a2fb9492154b2a41ed97df31"
+    }
+  ]
+}
