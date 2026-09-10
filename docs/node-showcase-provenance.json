@@ -1,0 +1,895 @@
+{
+  "schema": "speedtree.node-showcase.v1",
+  "modeler": "10.1.0",
+  "creation": "SPM generator edits through speedtree-nodes; official Modeler CLI export",
+  "visualization": "Headless Blender 5.1.1, unchanged OBJ geometry with display materials",
+  "ui_automation": false,
+  "modeler_screenshots": false,
+  "stages": [
+    {
+      "species": "willow",
+      "stage": "01-trunk",
+      "source": "willow/01-trunk.spm",
+      "sha256": "1b51686810e5272bccaca382ec62987c6fe9a985e1f04e5ea2e2f21e00ae9664",
+      "graph": {
+        "schema": "speedtree.generator-graph.v1",
+        "integration": "experimental_file_graph",
+        "format_version": "8",
+        "modeler_version": "10.0.0",
+        "source_sha256": "1b51686810e5272bccaca382ec62987c6fe9a985e1f04e5ea2e2f21e00ae9664",
+        "live_document_modified": false,
+        "requires_modeler_regeneration": true,
+        "generators": [
+          {
+            "id": "NoYe38M4/Em2R6d2KkG1k==",
+            "name": "Tree",
+            "type": "Tree",
+            "level": "0",
+            "hidden": false,
+            "property_count": 156
+          },
+          {
+            "id": "6Ppo27g1oV+ROFcuujwQug==",
+            "name": "Willow trunk",
+            "type": "Branch",
+            "level": "1",
+            "hidden": false,
+            "property_count": 362
+          }
+        ],
+        "links": [
+          {
+            "id": "sDwNlql8R0qlbGS7wBRi3g==",
+            "source_id": "NoYe38M4/Em2R6d2KkG1k==",
+            "target_id": "6Ppo27g1oV+ROFcuujwQug=="
+          }
+        ]
+      },
+      "operations": [
+        {
+          "op": "add",
+          "node_id": "6Ppo27g1oV+ROFcuujwQug==",
+          "name": "Willow trunk",
+          "template_path": "__________Trunk.stt",
+          "parent_id": "NoYe38M4/Em2R6d2KkG1k=="
+        },
+        {
+          "op": "set_property",
+          "node_id": "6Ppo27g1oV+ROFcuujwQug==",
+          "name": "Spine:Length:Absolute",
+          "value": 7.5
+        },
+        {
+          "op": "set_property",
+          "node_id": "6Ppo27g1oV+ROFcuujwQug==",
+          "name": "Skin:Radius:Absolute",
+          "value": 0.28
+        },
+        {
+          "op": "set_property",
+          "node_id": "6Ppo27g1oV+ROFcuujwQug==",
+          "name": "Random Seeds:Spine",
+          "value": 1701
+        }
+      ],
+      "geometry_validation": {
+        "vertices": 77,
+        "faces": 140,
+        "bounds": [
+          [
+            -0.471583,
+            0.44996
+          ],
+          [
+            -0.412599,
+            0.448265
+          ],
+          [
+            -0.0066169,
+            7.51142
+          ]
+        ],
+        "obj_sha256": "c1680b3a3f7c8fa39fce7f8ddafc5ceb6f6a62431e290584a7edf7c6160796a1"
+      },
+      "render": "images/node-stages/stage-01.png",
+      "presentation": "Headless Blender mesh render with display materials; not a Modeler screenshot",
+      "render_sha256": "4b5c281e0816caf544692dd9542d536d7e57cc75c265db86c72f044509ead87d"
+    },
+    {
+      "species": "willow",
+      "stage": "02-primary-branches",
+      "source": "willow/02-primary-branches.spm",
+      "sha256": "6b3d9dd39ed3446518e9948d89145de424cbd98290dc9842b672537ba01ea9f6",
+      "graph": {
+        "schema": "speedtree.generator-graph.v1",
+        "integration": "experimental_file_graph",
+        "format_version": "8",
+        "modeler_version": "10.0.0",
+        "source_sha256": "6b3d9dd39ed3446518e9948d89145de424cbd98290dc9842b672537ba01ea9f6",
+        "live_document_modified": false,
+        "requires_modeler_regeneration": true,
+        "generators": [
+          {
+            "id": "NoYe38M4/Em2R6d2KkG1k==",
+            "name": "Tree",
+            "type": "Tree",
+            "level": "0",
+            "hidden": false,
+            "property_count": 156
+          },
+          {
+            "id": "6Ppo27g1oV+ROFcuujwQug==",
+            "name": "Willow trunk",
+            "type": "Branch",
+            "level": "1",
+            "hidden": false,
+            "property_count": 362
+          },
+          {
+            "id": "sRRtjA5OP1uBhBMyPWoafA==",
+            "name": "Primary branches",
+            "type": "Branch",
+            "level": "2",
+            "hidden": false,
+            "property_count": 362
+          }
+        ],
+        "links": [
+          {
+            "id": "sDwNlql8R0qlbGS7wBRi3g==",
+            "source_id": "NoYe38M4/Em2R6d2KkG1k==",
+            "target_id": "6Ppo27g1oV+ROFcuujwQug=="
+          },
+          {
+            "id": "WD+1mHKjM0a8W1EOUil8NA==",
+            "source_id": "6Ppo27g1oV+ROFcuujwQug==",
+            "target_id": "sRRtjA5OP1uBhBMyPWoafA=="
+          }
+        ]
+      },
+      "operations": [
+        {
+          "op": "add",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Primary branches",
+          "template_path": "__Big.stt",
+          "parent_id": "6Ppo27g1oV+ROFcuujwQug=="
+        },
+        {
+          "op": "set_property",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Generation:First",
+          "value": 0.42
+        },
+        {
+          "op": "set_property",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Generation:Last",
+          "value": 0.94
+        },
+        {
+          "op": "set_property",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Generation:Interval:Frequency",
+          "value": 2.2
+        },
+        {
+          "op": "set_property",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Spine:Length:Absolute",
+          "value": 3.3
+        },
+        {
+          "op": "set_property",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Spine:Length:+ % of parent",
+          "value": 0
+        },
+        {
+          "op": "set_property",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Spine:Orientation:Start angle",
+          "value": 0.38
+        },
+        {
+          "op": "set_property",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Spine:Shape:Gravity",
+          "value": 0.2
+        },
+        {
+          "op": "set_property",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Skin:Radius:Absolute",
+          "value": 0.08
+        },
+        {
+          "op": "set_property",
+          "node_id": "sRRtjA5OP1uBhBMyPWoafA==",
+          "name": "Skin:Radius:+ % of parent",
+          "value": 0
+        }
+      ],
+      "geometry_validation": {
+        "vertices": 693,
+        "faces": 1252,
+        "bounds": [
+          [
+            -2.25424,
+            2.52351
+          ],
+          [
+            -2.37335,
+            1.01674
+          ],
+          [
+            -0.0066169,
+            7.8402
+          ]
+        ],
+        "obj_sha256": "d295ef3cdbb1ff1f53acf13d5f6902f70d6cbbb55c662867ce1993bfef9b5bfc"
+      },
+      "render": "images/node-stages/stage-02.png",
+      "presentation": "Headless Blender mesh render with display materials; not a Modeler screenshot",
+      "render_sha256": "6328db84aee2f68a0653055a91f6424c8a72af876d802b5a5c5290de2935209e"
+    },
+    {
+      "species": "willow",
+      "stage": "03-drooping-branches",
+      "source": "willow/03-drooping-branches.spm",
+      "sha256": "71126d6af928254786da1a64343fc76cfb0f906fd7f24db0b90246fbae7265cf",
+      "graph": {
+        "schema": "speedtree.generator-graph.v1",
+        "integration": "experimental_file_graph",
+        "format_version": "8",
+        "modeler_version": "10.0.0",
+        "source_sha256": "71126d6af928254786da1a64343fc76cfb0f906fd7f24db0b90246fbae7265cf",
+        "live_document_modified": false,
+        "requires_modeler_regeneration": true,
+        "generators": [
+          {
+            "id": "NoYe38M4/Em2R6d2KkG1k==",
+            "name": "Tree",
+            "type": "Tree",
+            "level": "0",
+            "hidden": false,
+            "property_count": 156
+          },
+          {
+            "id": "6Ppo27g1oV+ROFcuujwQug==",
+            "name": "Willow trunk",
+            "type": "Branch",
+            "level": "1",
+            "hidden": false,
+            "property_count": 362
+          },
+          {
+            "id": "sRRtjA5OP1uBhBMyPWoafA==",
+            "name": "Primary branches",
+            "type": "Branch",
+            "level": "2",
+            "hidden": false,
+            "property_count": 362
+          },
+          {
+            "id": "xeRTsiCZTVSHWD0D5tE7pg==",
+            "name": "Drooping branches",
+            "type": "Branch",
+            "level": "3",
+            "hidden": false,
+            "property_count": 362
+          }
+        ],
+        "links": [
+          {
+            "id": "sDwNlql8R0qlbGS7wBRi3g==",
+            "source_id": "NoYe38M4/Em2R6d2KkG1k==",
+            "target_id": "6Ppo27g1oV+ROFcuujwQug=="
+          },
+          {
+            "id": "WD+1mHKjM0a8W1EOUil8NA==",
+            "source_id": "6Ppo27g1oV+ROFcuujwQug==",
+            "target_id": "sRRtjA5OP1uBhBMyPWoafA=="
+          },
+          {
+            "id": "1+T11364+UiIh6cs2QhiTQ==",
+            "source_id": "sRRtjA5OP1uBhBMyPWoafA==",
+            "target_id": "xeRTsiCZTVSHWD0D5tE7pg=="
+          }
+        ]
+      },
+      "operations": [
+        {
+          "op": "add",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Drooping branches",
+          "template_path": "__Twigs.stt",
+          "parent_id": "sRRtjA5OP1uBhBMyPWoafA=="
+        },
+        {
+          "op": "set_property",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Generation:First",
+          "value": 0.2
+        },
+        {
+          "op": "set_property",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Generation:Last",
+          "value": 1
+        },
+        {
+          "op": "set_property",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Generation:Interval:Frequency",
+          "value": 4
+        },
+        {
+          "op": "set_property",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Spine:Length:Absolute",
+          "value": 3.0
+        },
+        {
+          "op": "set_property",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Spine:Length:+ % of parent",
+          "value": 0
+        },
+        {
+          "op": "set_property",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Spine:Orientation:Start angle",
+          "value": 0.36
+        },
+        {
+          "op": "set_property",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Spine:Shape:Gravity",
+          "value": 1.1
+        },
+        {
+          "op": "set_property",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Skin:Radius:Absolute",
+          "value": 0.011
+        },
+        {
+          "op": "set_property",
+          "node_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+          "name": "Skin:Radius:+ % of parent",
+          "value": 0
+        }
+      ],
+      "geometry_validation": {
+        "vertices": 1908,
+        "faces": 3574,
+        "bounds": [
+          [
+            -2.52068,
+            3.08521
+          ],
+          [
+            -3.11212,
+            1.40645
+          ],
+          [
+            -0.0066169,
+            8.16551
+          ]
+        ],
+        "obj_sha256": "4e7d356d1739a2801dba06a4d6a3a50529e250b7a127c06c5d4b99cad94b2d5e"
+      },
+      "render": "images/node-stages/stage-03.png",
+      "presentation": "Headless Blender mesh render with display materials; not a Modeler screenshot",
+      "render_sha256": "e8fe86b043c4717d9028736fc1d12b76ee033e89641f20a5bb542c91a34b5e55"
+    },
+    {
+      "species": "willow",
+      "stage": "04-leaves",
+      "source": "willow/04-leaves.spm",
+      "sha256": "4e47ca6014a3568bef22be937ed2962b218a45faff3ea931dbd6fbc9ce928983",
+      "graph": {
+        "schema": "speedtree.generator-graph.v1",
+        "integration": "experimental_file_graph",
+        "format_version": "8",
+        "modeler_version": "10.0.0",
+        "source_sha256": "4e47ca6014a3568bef22be937ed2962b218a45faff3ea931dbd6fbc9ce928983",
+        "live_document_modified": false,
+        "requires_modeler_regeneration": true,
+        "generators": [
+          {
+            "id": "NoYe38M4/Em2R6d2KkG1k==",
+            "name": "Tree",
+            "type": "Tree",
+            "level": "0",
+            "hidden": false,
+            "property_count": 156
+          },
+          {
+            "id": "6Ppo27g1oV+ROFcuujwQug==",
+            "name": "Willow trunk",
+            "type": "Branch",
+            "level": "1",
+            "hidden": false,
+            "property_count": 362
+          },
+          {
+            "id": "sRRtjA5OP1uBhBMyPWoafA==",
+            "name": "Primary branches",
+            "type": "Branch",
+            "level": "2",
+            "hidden": false,
+            "property_count": 362
+          },
+          {
+            "id": "xeRTsiCZTVSHWD0D5tE7pg==",
+            "name": "Drooping branches",
+            "type": "Branch",
+            "level": "3",
+            "hidden": false,
+            "property_count": 362
+          },
+          {
+            "id": "j7CQw2WpO12ldGl4uvbk1w==",
+            "name": "Willow leaves",
+            "type": "Leaf Mesh",
+            "level": "4",
+            "hidden": false,
+            "property_count": 224
+          }
+        ],
+        "links": [
+          {
+            "id": "sDwNlql8R0qlbGS7wBRi3g==",
+            "source_id": "NoYe38M4/Em2R6d2KkG1k==",
+            "target_id": "6Ppo27g1oV+ROFcuujwQug=="
+          },
+          {
+            "id": "WD+1mHKjM0a8W1EOUil8NA==",
+            "source_id": "6Ppo27g1oV+ROFcuujwQug==",
+            "target_id": "sRRtjA5OP1uBhBMyPWoafA=="
+          },
+          {
+            "id": "1+T11364+UiIh6cs2QhiTQ==",
+            "source_id": "sRRtjA5OP1uBhBMyPWoafA==",
+            "target_id": "xeRTsiCZTVSHWD0D5tE7pg=="
+          },
+          {
+            "id": "9i7WHN56JEivA7su5AkxbA==",
+            "source_id": "xeRTsiCZTVSHWD0D5tE7pg==",
+            "target_id": "j7CQw2WpO12ldGl4uvbk1w=="
+          }
+        ]
+      },
+      "operations": [
+        {
+          "op": "add",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Willow leaves",
+          "template_path": "__Alternating.stt",
+          "parent_id": "xeRTsiCZTVSHWD0D5tE7pg=="
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Generation:Mode",
+          "value": 3
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Generation:Absolute:Number",
+          "value": 72
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Generation:Absolute Steps:Steps",
+          "value": 22
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Generation:Absolute Steps:Per Step:Number",
+          "value": 2
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Generation:First",
+          "value": 0.05
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Generation:Last",
+          "value": 1
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Leaves:Size",
+          "value": 0.24
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Deformation:Scale:X",
+          "value": 0.28
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Deformation:Scale:Y",
+          "value": 1.2
+        },
+        {
+          "op": "set_property",
+          "node_id": "j7CQw2WpO12ldGl4uvbk1w==",
+          "name": "Deformation:Fold",
+          "value": 0.18
+        }
+      ],
+      "geometry_validation": {
+        "vertices": 7092,
+        "faces": 6166,
+        "bounds": [
+          [
+            -2.79778,
+            3.32069
+          ],
+          [
+            -3.3603,
+            1.66723
+          ],
+          [
+            -0.0066169,
+            8.43813
+          ]
+        ],
+        "obj_sha256": "46196379a334a7f4a003148112038aeb802628557aabdefb0d1cc0c59692b207"
+      },
+      "render": "images/node-stages/stage-04.png",
+      "presentation": "Headless Blender mesh render with display materials; not a Modeler screenshot",
+      "render_sha256": "07df75dfdafd5d5bcddc2c6a1d85989c047cb9ee47739c145d37f7faf7955b04"
+    },
+    {
+      "species": "grass",
+      "stage": "01-stalks",
+      "source": "grass/01-stalks.spm",
+      "sha256": "7ee39bb536f6708e7375815b6829ee87dcf5f0e2e137b1089fe1f18a3fdfbe55",
+      "graph": {
+        "schema": "speedtree.generator-graph.v1",
+        "integration": "experimental_file_graph",
+        "format_version": "8",
+        "modeler_version": "10.0.0",
+        "source_sha256": "7ee39bb536f6708e7375815b6829ee87dcf5f0e2e137b1089fe1f18a3fdfbe55",
+        "live_document_modified": false,
+        "requires_modeler_regeneration": true,
+        "generators": [
+          {
+            "id": "NoYe38M4/Em2R6d2KkG1k==",
+            "name": "Tree",
+            "type": "Tree",
+            "level": "0",
+            "hidden": false,
+            "property_count": 156
+          },
+          {
+            "id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+            "name": "Grass stalks",
+            "type": "Branch",
+            "level": "1",
+            "hidden": false,
+            "property_count": 362
+          }
+        ],
+        "links": [
+          {
+            "id": "MU4ndIpfJ0OqXrk8hLvOfg==",
+            "source_id": "NoYe38M4/Em2R6d2KkG1k==",
+            "target_id": "EOxYeO2x2Fa1jY/m6ls/rQ=="
+          }
+        ]
+      },
+      "operations": [
+        {
+          "op": "set_property",
+          "node_id": "NoYe38M4/Em2R6d2KkG1k==",
+          "name": "Shape:Radius",
+          "value": 2
+        },
+        {
+          "op": "add",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Grass stalks",
+          "template_path": "_Grass.spm",
+          "template_node_id": "o4nw4Qp7fkCW1XYpravGxQ==",
+          "parent_id": "NoYe38M4/Em2R6d2KkG1k=="
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Generation:Mode",
+          "value": 5
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Generation:Absolute Steps:Steps",
+          "value": 5
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Generation:Absolute Steps:Per Step:Number",
+          "value": 16
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Generation:First",
+          "value": 0.015
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Generation:Last",
+          "value": 0.24
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Spine:Length:Absolute",
+          "value": 0.65
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Spine:Orientation:Start angle",
+          "value": 0.36
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Spine:Shape:Gravity",
+          "value": 0.12
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Skin:Radius:Absolute",
+          "value": 0.0015
+        },
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Random Seeds:Spine",
+          "value": 2901
+        }
+      ],
+      "geometry_validation": {
+        "vertices": 15390,
+        "faces": 29160,
+        "bounds": [
+          [
+            -0.951601,
+            0.884479
+          ],
+          [
+            -0.940084,
+            0.974495
+          ],
+          [
+            -0.114797,
+            0.64821
+          ]
+        ],
+        "obj_sha256": "ab01ce26abb5d34490f9a5ef5bede8feb97a28eb4764333eb7bdddf33c7d04b1"
+      },
+      "render": "images/node-stages/stage-05.png",
+      "presentation": "Headless Blender mesh render with display materials; not a Modeler screenshot",
+      "render_sha256": "e75a407dc7ac9259b165cdee549de519f379c72fb0f84ed7ff3b8c169b07f3e8"
+    },
+    {
+      "species": "grass",
+      "stage": "02-blades",
+      "source": "grass/02-blades.spm",
+      "sha256": "ef9b4a4f9d46a0c86849437de06ef3bbfc590019ac52b468ac4d94e32022dbca",
+      "graph": {
+        "schema": "speedtree.generator-graph.v1",
+        "integration": "experimental_file_graph",
+        "format_version": "8",
+        "modeler_version": "10.0.0",
+        "source_sha256": "ef9b4a4f9d46a0c86849437de06ef3bbfc590019ac52b468ac4d94e32022dbca",
+        "live_document_modified": false,
+        "requires_modeler_regeneration": true,
+        "generators": [
+          {
+            "id": "NoYe38M4/Em2R6d2KkG1k==",
+            "name": "Tree",
+            "type": "Tree",
+            "level": "0",
+            "hidden": false,
+            "property_count": 156
+          },
+          {
+            "id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+            "name": "Grass stalks",
+            "type": "Branch",
+            "level": "1",
+            "hidden": false,
+            "property_count": 362
+          },
+          {
+            "id": "9AU4qEAzp1+7UETjVu8qTQ==",
+            "name": "Grass blades",
+            "type": "Frond",
+            "level": "2",
+            "hidden": false,
+            "property_count": 185
+          }
+        ],
+        "links": [
+          {
+            "id": "MU4ndIpfJ0OqXrk8hLvOfg==",
+            "source_id": "NoYe38M4/Em2R6d2KkG1k==",
+            "target_id": "EOxYeO2x2Fa1jY/m6ls/rQ=="
+          },
+          {
+            "id": "rrhxparXYku4eYf5BRc+2g==",
+            "source_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+            "target_id": "9AU4qEAzp1+7UETjVu8qTQ=="
+          }
+        ]
+      },
+      "operations": [
+        {
+          "op": "add",
+          "node_id": "9AU4qEAzp1+7UETjVu8qTQ==",
+          "name": "Grass blades",
+          "template_path": "_Grass.spm",
+          "template_node_id": "9Xy0bgn1fEy10P0UFSX2sw==",
+          "parent_id": "EOxYeO2x2Fa1jY/m6ls/rQ=="
+        },
+        {
+          "op": "set_property",
+          "node_id": "9AU4qEAzp1+7UETjVu8qTQ==",
+          "name": "Shape:Scale:Width",
+          "value": 0.028
+        },
+        {
+          "op": "set_property",
+          "node_id": "9AU4qEAzp1+7UETjVu8qTQ==",
+          "name": "Shape:Fold",
+          "value": 0.5
+        },
+        {
+          "op": "set_property",
+          "node_id": "9AU4qEAzp1+7UETjVu8qTQ==",
+          "name": "Shape:Roll",
+          "value": 0.14
+        },
+        {
+          "op": "set_property",
+          "node_id": "9AU4qEAzp1+7UETjVu8qTQ==",
+          "name": "Material:Two sided",
+          "value": true
+        }
+      ],
+      "geometry_validation": {
+        "vertices": 27540,
+        "faces": 59400,
+        "bounds": [
+          [
+            -0.951603,
+            0.884481
+          ],
+          [
+            -0.940084,
+            0.974495
+          ],
+          [
+            -0.114797,
+            0.648211
+          ]
+        ],
+        "obj_sha256": "20a25cc99f2659b418dedf398439838165b9b84864e33480ab9b94c1a9473d06"
+      },
+      "render": "images/node-stages/stage-06.png",
+      "presentation": "Headless Blender mesh render with display materials; not a Modeler screenshot",
+      "render_sha256": "a3c55fa328294669067908cbb88343c5076cab52bf04342a7567ca14d7be7860"
+    },
+    {
+      "species": "grass",
+      "stage": "03-tapered-clump",
+      "source": "grass/03-tapered-clump.spm",
+      "sha256": "ce3ba653d12bb87bc8a1b7130ddd0fe346a51bc07e208b4d37236fc673a51783",
+      "graph": {
+        "schema": "speedtree.generator-graph.v1",
+        "integration": "experimental_file_graph",
+        "format_version": "8",
+        "modeler_version": "10.0.0",
+        "source_sha256": "ce3ba653d12bb87bc8a1b7130ddd0fe346a51bc07e208b4d37236fc673a51783",
+        "live_document_modified": false,
+        "requires_modeler_regeneration": true,
+        "generators": [
+          {
+            "id": "NoYe38M4/Em2R6d2KkG1k==",
+            "name": "Tree",
+            "type": "Tree",
+            "level": "0",
+            "hidden": false,
+            "property_count": 156
+          },
+          {
+            "id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+            "name": "Grass stalks",
+            "type": "Branch",
+            "level": "1",
+            "hidden": false,
+            "property_count": 362
+          },
+          {
+            "id": "9AU4qEAzp1+7UETjVu8qTQ==",
+            "name": "Grass blades",
+            "type": "Frond",
+            "level": "2",
+            "hidden": false,
+            "property_count": 185
+          }
+        ],
+        "links": [
+          {
+            "id": "MU4ndIpfJ0OqXrk8hLvOfg==",
+            "source_id": "NoYe38M4/Em2R6d2KkG1k==",
+            "target_id": "EOxYeO2x2Fa1jY/m6ls/rQ=="
+          },
+          {
+            "id": "rrhxparXYku4eYf5BRc+2g==",
+            "source_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+            "target_id": "9AU4qEAzp1+7UETjVu8qTQ=="
+          }
+        ]
+      },
+      "operations": [
+        {
+          "op": "set_property",
+          "node_id": "EOxYeO2x2Fa1jY/m6ls/rQ==",
+          "name": "Spine:Length:Absolute",
+          "value": 0.55
+        },
+        {
+          "op": "set_property",
+          "node_id": "9AU4qEAzp1+7UETjVu8qTQ==",
+          "name": "Shape:Scale:Width",
+          "component": "ProfileSpline/ControlPoint[2]/Y",
+          "value": 0
+        }
+      ],
+      "geometry_validation": {
+        "vertices": 27540,
+        "faces": 59400,
+        "bounds": [
+          [
+            -0.882209,
+            0.813028
+          ],
+          [
+            -0.865776,
+            0.90037
+          ],
+          [
+            -0.0973174,
+            0.555771
+          ]
+        ],
+        "obj_sha256": "5792d72ef504444784fefa62b197232055f1712cf5315762455b33a482042676"
+      },
+      "render": "images/node-stages/stage-07.png",
+      "presentation": "Headless Blender mesh render with display materials; not a Modeler screenshot",
+      "render_sha256": "8fe2ce723ab3b7afac7e9551b718155f38cd7dd422818a8fe5bbb125631fa219"
+    }
+  ]
+}

@@ -18,6 +18,10 @@ an attached GUI. They preserve input identity and produce an asset manifest
 for target adapter import/readback. Live in-process generator edits and queries
 remain unavailable until a supported vendor integration is implemented.
 
+For experimental SPM/STT generator file authoring, use speedtree-nodes and
+validate the resulting new file through the official exporter. File edits
+do not modify a live Modeler document or establish a published scripting API.
+
 Before UI observation or input, report provider=dcc-cua, runtime version,
 exact PID and HWND. Use only the project ui-control route with fresh binding.
 Do not fall back to generic computer use or undocumented process injection.
