@@ -55,6 +55,11 @@ jobs:
       # run on release PRs.
       - uses: googleapis/release-please-action@v5
         id: release
+        # On an explicit dispatch target the requested tag is authoritative.
+        # Running release-please here can create a new release whose tag then
+        # silently wins over the requested one in RELEASE_TAG below, so the
+        # operator asking to backfill v0.1.5 would get v0.1.6 published instead.
+        if: github.event_name != 'workflow_dispatch' || inputs.tag_name == ''
         with:
           token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
           config-file: release-please-config.json
@@ -136,6 +141,10 @@ jobs:
           match = re.search(r'^version = "([0-9]+\.[0-9]+\.[0-9]+)"', source, re.MULTILINE)
           if match is None or manifest != expected or match.group(1) != expected:
               raise SystemExit("Checked-out package version does not match the release target.")
+          version_py = Path("src/dcc_mcp_speedtree/__version__.py").read_text(encoding="utf-8")
+          py_match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"', version_py, re.MULTILINE)
+          if py_match is None or py_match.group(1) != expected:
+              raise SystemExit("src/dcc_mcp_speedtree/__version__.py does not match the release target.")
           PY
       - uses: actions/setup-python@v6
         with:
@@ -194,6 +203,10 @@ jobs:
           match = re.search(r'^version = "([0-9]+\.[0-9]+\.[0-9]+)"', source, re.MULTILINE)
           if match is None or manifest != expected or match.group(1) != expected:
               raise SystemExit("Checked-out package version does not match the release target.")
+          version_py = Path("src/dcc_mcp_speedtree/__version__.py").read_text(encoding="utf-8")
+          py_match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"', version_py, re.MULTILINE)
+          if py_match is None or py_match.group(1) != expected:
+              raise SystemExit("src/dcc_mcp_speedtree/__version__.py does not match the release target.")
           PY
       - name: Download dist artifacts
         uses: actions/download-artifact@v8
