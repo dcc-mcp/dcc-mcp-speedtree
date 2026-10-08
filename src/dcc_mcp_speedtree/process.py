@@ -1,5 +1,6 @@
 """Wait for one owned Modeler process with the core cancellation contract."""
 
+import os
 import subprocess
 import time
 
@@ -9,7 +10,13 @@ from dcc_mcp_core.cancellation import check_cancelled
 def run_modeler(argv, *, cwd, stdout, timeout):
     check_cancelled()
     with subprocess.Popen(
-        argv, cwd=cwd, stdout=stdout, stderr=subprocess.STDOUT, shell=False
+        argv,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=stdout,
+        stderr=subprocess.STDOUT,
+        shell=False,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     ) as process:
         deadline = time.monotonic() + timeout
         try:
