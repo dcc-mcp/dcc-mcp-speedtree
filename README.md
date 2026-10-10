@@ -5,6 +5,26 @@ licensed Modeler command-line exporter, and hand verified assets to another
 DCC-MCP adapter. Graph authoring uses the observed SPM/STT file format and is
 experimental; full live Modeler control is not yet available.
 
+<!-- dcc-mcp-coverage-pointer:start -->
+<!-- Generated from dcc-mcp-catalog.yml by scripts/generate_adapter_pointer.py in dcc-mcp/dcc-mcp-core. Do not edit by hand. -->
+## Part of the DCC-MCP host matrix
+
+**dcc-mcp-speedtree** — SpeedTree adapter for DCC-MCP — edit experimental native
+generator graphs, run the licensed Modeler CLI and verify vegetation exports.
+
+It is one of **47 host adapters** in the DCC-MCP catalog. Every adapter speaks the same
+MCP protocol and builds on the same core runtime contract; each one exposes the tools
+its own host needs on top of that.
+
+- [All host adapters and install metadata](https://dcc-mcp.github.io/ecosystem)
+- [Host matrix on the core README](https://github.com/dcc-mcp/dcc-mcp-core#readme)
+- [Showcase](https://dcc-mcp.github.io/showcase)
+
+This block is generated from the catalog entry in
+[`dcc-mcp-catalog.yml`](https://github.com/dcc-mcp/dcc-mcp-core/blob/main/dcc-mcp-catalog.yml).
+Re-run the generator after changing the catalog.
+<!-- dcc-mcp-coverage-pointer:end -->
+
 ## Native node showcase
 
 ![Willow and grass created through successive generator operations](docs/images/native-node-workflow.gif)
