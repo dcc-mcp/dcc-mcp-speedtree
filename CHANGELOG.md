@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/dcc-mcp/dcc-mcp-speedtree/compare/v0.1.1...v0.1.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* hide background Modeler commands on Windows ([#8](https://github.com/dcc-mcp/dcc-mcp-speedtree/issues/8)) ([7bc8be3](https://github.com/dcc-mcp/dcc-mcp-speedtree/commit/7bc8be3792d8d448107803efa2cb4b85cb736af1))
+
 ## [0.1.1](https://github.com/dcc-mcp/dcc-mcp-speedtree/compare/v0.1.0...v0.1.1) (2026-09-27)
 
 
