@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dcc-mcp-speedtree"
-version = "0.1.1"
+version = "0.1.2"
 description = "Local-first DCC-MCP adapter for SpeedTree official capabilities"
 readme = "README.md"
 requires-python = ">=3.9"
