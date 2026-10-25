@@ -12,7 +12,7 @@ experimental; full live Modeler control is not yet available.
 **dcc-mcp-speedtree** — SpeedTree adapter for DCC-MCP — edit experimental native
 generator graphs, run the licensed Modeler CLI and verify vegetation exports.
 
-It is one of **47 host adapters** in the DCC-MCP catalog. Every adapter speaks the same
+It is one of **48 host adapters** in the DCC-MCP catalog. Every adapter speaks the same
 MCP protocol and builds on the same core runtime contract; each one exposes the tools
 its own host needs on top of that.
 
