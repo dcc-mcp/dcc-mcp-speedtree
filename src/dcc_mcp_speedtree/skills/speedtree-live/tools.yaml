@@ -1,0 +1,115 @@
+tools:
+- name: live_status
+  description: List running SpeedTree Modeler windows with active document, open dialog and File > Recents.
+  source_file: scripts/live_status.py
+  execution: sync
+  affinity: any
+  enforce_thread_affinity: true
+  annotations: {read_only_hint: true, destructive_hint: false, idempotent_hint: true, open_world_hint: false}
+  timeout_hint_secs: 60
+  input_schema:
+    type: object
+    properties:
+      process_id: {type: integer, minimum: 1}
+    additionalProperties: false
+  output_schema: {type: object}
+- name: live_screenshot
+  description: Capture the Modeler window in the background (also when covered) and return the PNG path.
+  source_file: scripts/live_screenshot.py
+  execution: sync
+  affinity: any
+  enforce_thread_affinity: true
+  annotations: {read_only_hint: true, destructive_hint: false, idempotent_hint: false, open_world_hint: false}
+  timeout_hint_secs: 60
+  input_schema:
+    type: object
+    properties:
+      process_id: {type: integer, minimum: 1}
+      output_path: {type: string, minLength: 1, maxLength: 4096}
+      scale: {type: number, minimum: 0.1, maximum: 1.0, default: 0.6}
+    additionalProperties: false
+  output_schema: {type: object}
+- name: live_open
+  description: Make a file the active Modeler document through File > Recents (no file dialog).
+  source_file: scripts/live_open.py
+  execution: sync
+  affinity: any
+  enforce_thread_affinity: true
+  annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false}
+  timeout_hint_secs: 180
+  input_schema:
+    type: object
+    required: [path]
+    properties:
+      path: {type: string, minLength: 1, maxLength: 4096}
+      process_id: {type: integer, minimum: 1}
+    additionalProperties: false
+  output_schema: {type: object}
+- name: live_save
+  description: Save the active Modeler document (File > Save).
+  source_file: scripts/live_save.py
+  execution: sync
+  affinity: any
+  enforce_thread_affinity: true
+  annotations: {read_only_hint: false, destructive_hint: false, idempotent_hint: true, open_world_hint: false}
+  timeout_hint_secs: 180
+  input_schema:
+    type: object
+    properties:
+      process_id: {type: integer, minimum: 1}
+    additionalProperties: false
+  output_schema: {type: object}
+- name: live_revert
+  description: Reload the active Modeler document from disk (File > Revert to saved, confirmed) and screenshot it. Unsaved GUI edits are lost.
+  source_file: scripts/live_revert.py
+  execution: sync
+  affinity: any
+  enforce_thread_affinity: true
+  annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: true, open_world_hint: false}
+  timeout_hint_secs: 240
+  input_schema:
+    type: object
+    properties:
+      process_id: {type: integer, minimum: 1}
+      settle_seconds: {type: number, minimum: 0, maximum: 60, default: 3}
+    additionalProperties: false
+  output_schema: {type: object}
+- name: live_apply
+  description: Save the active Modeler document, keep a history copy, apply edit_graph operations in place, reload it in the Modeler and return a screenshot path.
+  source_file: scripts/live_apply.py
+  execution: sync
+  affinity: any
+  enforce_thread_affinity: true
+  annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: false, open_world_hint: false}
+  timeout_hint_secs: 600
+  input_schema:
+    type: object
+    required: [path, operations]
+    properties:
+      path: {type: string, minLength: 1, maxLength: 4096}
+      operations:
+        type: array
+        minItems: 1
+        maxItems: 256
+        items: {type: object}
+      process_id: {type: integer, minimum: 1}
+      settle_seconds: {type: number, minimum: 0, maximum: 60, default: 3}
+    additionalProperties: false
+  output_schema: {type: object}
+- name: live_undo
+  description: Restore the file as it was before the last live_apply, reload it in the Modeler and return a screenshot path.
+  source_file: scripts/live_undo.py
+  execution: sync
+  affinity: any
+  enforce_thread_affinity: true
+  annotations: {read_only_hint: false, destructive_hint: true, idempotent_hint: false, open_world_hint: false}
+  timeout_hint_secs: 600
+  input_schema:
+    type: object
+    required: [path]
+    properties:
+      path: {type: string, minLength: 1, maxLength: 4096}
+      process_id: {type: integer, minimum: 1}
+      settle_seconds: {type: number, minimum: 0, maximum: 60, default: 3}
+    additionalProperties: false
+  output_schema: {type: object}
