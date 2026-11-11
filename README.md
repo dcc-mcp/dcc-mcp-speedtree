@@ -92,6 +92,20 @@ caller-supplied executable or shell command. Existing output directories are
 rejected; timeout, failed exit, changed input, missing mesh, or missing explicit
 material dependency stops the batch and preserves a partial manifest.
 
+## Live co-design (Windows)
+
+The `speedtree-live` skill lets an agent edit the tree that a user is watching
+in a running Modeler, without moving the user's mouse or keyboard. The Modeler
+has no scripting API, so `live_apply` works through the open file: it saves the
+active document, copies it into `_live_history/<name>/`, applies `edit_graph`
+operations in place, reloads with File > Revert to saved and returns a
+background `PrintWindow` screenshot. `live_undo` restores the previous copy.
+`live_status`, `live_open` (File > Recents), `live_save`, `live_revert` and
+`live_screenshot` are also available. Menus are driven through Windows UI
+Automation from short-lived child processes; dialogs are answered only by keys
+posted to the dialog window (Enter for the revert warning, Escape otherwise).
+The target must be the active document and the window must not be minimised.
+
 ## Unreal
 
 ![Real SpeedTree source and Unreal Engine result](docs/images/speedtree-to-unreal.png)

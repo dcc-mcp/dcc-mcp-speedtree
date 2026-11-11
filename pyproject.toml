@@ -23,7 +23,7 @@ speedtree = "dcc_mcp_speedtree:SpeedTreeMcpServer"
 where = ["src"]
 
 [tool.setuptools.package-data]
-dcc_mcp_speedtree = ["skills/**/*.md", "skills/**/*.yaml", "skills/**/*.py"]
+dcc_mcp_speedtree = ["skills/**/*.md", "skills/**/*.yaml", "skills/**/*.py", "live.ps1"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

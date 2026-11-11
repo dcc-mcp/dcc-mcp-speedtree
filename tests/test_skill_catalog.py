@@ -16,15 +16,24 @@ def test_registered_contracts_preserve_read_only_hints_and_packaged_scripts(tmp_
             "speedtree-export",
             "speedtree-official",
             "speedtree-nodes",
+            "speedtree-live",
         }
         assert server.load_skill("speedtree-official")
         actions = [a for a in server.list_actions("speedtree") if a.get("skill_name") in skills]
-        assert len(actions) == 16
+        assert len(actions) == 23
         for action in actions:
             assert Path(action["source_file"]).is_file()
             assert action["input_schema"]["type"] == "object"
             assert action["output_schema"]["type"] == "object"
             mutating = action["name"] == "speedtree_export__export_batch"
+            name = action["name"]
+            if name.startswith("speedtree_live__"):
+                # Live tools act on the user's open Modeler document; reloads discard GUI state.
+                reloads = name.split("__")[1] in {"live_revert", "live_apply", "live_undo"}
+                reads = name.split("__")[1] in {"live_status", "live_screenshot"}
+                assert action["annotations"]["read_only_hint"] is reads
+                assert action["annotations"]["destructive_hint"] is reloads
+                continue
             assert action["annotations"]["read_only_hint"] is not (
                 mutating or action["name"] == "speedtree_nodes__edit_graph"
             )
