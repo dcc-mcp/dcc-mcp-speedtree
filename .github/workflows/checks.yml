@@ -6,6 +6,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ['3.9', '3.12']
+        # setup-python no longer ships CPython 3.9 for ubuntu-latest; keep
+        # 3.9 coverage on a runner that still carries the 3.9 toolcache.
+        exclude:
+          - {os: ubuntu-latest, python: '3.9'}
+          - {os: windows-latest, python: '3.9'}
+        include:
+          - {os: ubuntu-22.04, python: '3.9'}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
