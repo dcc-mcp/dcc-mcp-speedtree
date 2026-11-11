@@ -17,10 +17,11 @@ def test_registered_contracts_preserve_read_only_hints_and_packaged_scripts(tmp_
             "speedtree-official",
             "speedtree-nodes",
             "speedtree-production",
+            "speedtree-live",
         }
         assert server.load_skill("speedtree-official")
         actions = [a for a in server.list_actions("speedtree") if a.get("skill_name") in skills]
-        assert len(actions) == 22
+        assert len(actions) == 29
         action_names = {action["name"] for action in actions}
         assert {
             "speedtree_production__production_generate",
@@ -40,6 +41,14 @@ def test_registered_contracts_preserve_read_only_hints_and_packaged_scripts(tmp_
             assert Path(action["source_file"]).is_file()
             assert action["input_schema"]["type"] == "object"
             assert action["output_schema"]["type"] == "object"
+            name = action["name"]
+            if name.startswith("speedtree_live__"):
+                # Live tools act on the user's open Modeler document; reloads discard GUI state.
+                reloads = name.split("__")[1] in {"live_revert", "live_apply", "live_undo"}
+                reads = name.split("__")[1] in {"live_status", "live_screenshot"}
+                assert action["annotations"]["read_only_hint"] is reads
+                assert action["annotations"]["destructive_hint"] is reloads
+                continue
             mutating = action["name"] in {
                 "speedtree_export__export_batch",
             }

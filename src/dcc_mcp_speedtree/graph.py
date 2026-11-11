@@ -16,6 +16,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# Modeler saves of large trees expand to >120 MB of XML; keep a bound against gzip bombs.
 MAX_XML_BYTES = 256 * 1024 * 1024
 MAX_OPERATIONS = 256
 _COMPONENT = re.compile(

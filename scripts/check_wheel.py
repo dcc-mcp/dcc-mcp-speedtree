@@ -20,7 +20,8 @@ assert package.is_relative_to(root), (package, root)
 skills = package / "skills"
 assert (skills / "speedtree-official/metadata/depends.md").is_file()
 expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0,
-            "speedtree-nodes": 5, "speedtree-production": 6}
+            "speedtree-nodes": 5, "speedtree-production": 6, "speedtree-live": 7}
+assert (package / "live.ps1").is_file()
 exe = root / "SpeedTree_Modeler.exe"
 exe.write_bytes(b"not executable; metadata-only fixture")
 server = SpeedTreeMcpServer(executable=str(exe), enable_gateway_failover=False,
@@ -38,6 +39,8 @@ try:
     for action in actions:
         script = Path(action["source_file"]).resolve()
         assert script.is_file() and script.is_relative_to(package), script
+        if action["name"].startswith("speedtree_live__"):
+            continue
         mutating = action["name"] == "speedtree_export__export_batch"
         assert action["annotations"]["read_only_hint"] is not (
             mutating or action["name"] in {"speedtree_nodes__edit_graph",
