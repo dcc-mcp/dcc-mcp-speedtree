@@ -21,7 +21,7 @@ assert package.is_relative_to(root), (package, root)
 skills = package / "skills"
 assert (skills / "speedtree-official/metadata/depends.md").is_file()
 expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0,
-            "speedtree-nodes": 5, "speedtree-production": 6}
+            "speedtree-nodes": 5, "speedtree-production": 8}
 exe = root / "SpeedTree_Modeler.exe"
 exe.write_bytes(b"not executable; metadata-only fixture")
 server = SpeedTreeMcpServer(executable=str(exe), enable_gateway_failover=False,
@@ -39,7 +39,8 @@ try:
     for action in actions:
         script = Path(action["source_file"]).resolve()
         assert script.is_file() and script.is_relative_to(package), script
-        mutating = action["name"] == "speedtree_export__export_batch"
+        mutating = action["name"] in {"speedtree_export__export_batch",
+                                      "speedtree_production__fit_reference_modeler"}
         assert action["annotations"]["read_only_hint"] is not (
             mutating or action["name"] in {"speedtree_nodes__edit_graph",
                                            "speedtree_production__production_generate",
@@ -47,6 +48,8 @@ try:
                                            "speedtree_production__generate_diagnostic_views",
                                            "speedtree_production__rank_reference_candidates"})
         assert action["annotations"]["destructive_hint"] is mutating
+        if mutating:
+            assert action["execution"] == "async" and action["annotations"]["deferred_hint"] is True
     result = runpy.run_path(str(skills / "speedtree-discovery/scripts/inspect_capabilities.py"))["main"]()
     assert result["success"] and result["context"]["full_modeler_coverage"] is False
     assert result["context"]["live_probe_performed"] is False
@@ -105,11 +108,38 @@ try:
     preview_entry = runpy.run_path(str(skills / "speedtree-production/scripts/generate_diagnostic_views.py"))
     assert callable(preview_entry["main"])
     assert (skills / "speedtree-production/scripts/_preview_worker.py").is_file()
+    structure_source = root / "structure.spm"
+    structure_source.write_text(
+        '<SpeedTree Version="8"><Generators>'
+        '<Generator Type="Tree"><GUID>root</GUID><Name>root</Name><Properties/></Generator>'
+        '<Generator Type="Branch"><GUID>trunk</GUID><Name>trunk</Name><Properties>'
+        '<Property><Name>Length</Name><Value>2</Value></Property></Properties></Generator>'
+        '<Generator Type="Branch"><GUID>primary</GUID><Name>primary</Name><Properties/></Generator>'
+        '</Generators><Links>'
+        '<Link><GUID>link1</GUID><SourceGUID>root</SourceGUID><TargetGUID>trunk</TargetGUID></Link>'
+        '<Link><GUID>link2</GUID><SourceGUID>trunk</SourceGUID><TargetGUID>primary</TargetGUID></Link>'
+        '</Links></SpeedTree>', encoding="utf-8")
+    structure = runpy.run_path(str(skills / "speedtree-production/scripts/validate_branch_structure.py"))["main"](
+        source_path=str(structure_source), trunk_id="trunk", max_branch_order=2)
+    assert structure["success"] and structure["context"]["status"] == "passed", structure
+    assert structure["context"]["primary_generators"] == 1
+    fit_entry = runpy.run_path(str(skills / "speedtree-production/scripts/fit_reference_modeler.py"))
+    assert callable(fit_entry["main"])
+    preset = root / "preset.ini"
+    preset.write_text("[General]\nType=VFX\n", encoding="utf-8")
+    rejected_fit = fit_entry["main"](
+        source_path=str(structure_source), output_dir=str(root / "fit-rejected"),
+        parameters=[{"node_id": "trunk", "name": "Length", "initial": 2, "values": [2]}],
+        references=specs, preset_path=str(preset), material_categories={"bark": "wood", "leaf": "card"},
+        brief={}, trunk_id="trunk", max_branch_order=0, max_evaluations=1)
+    assert not rejected_fit["success"] and rejected_fit["context"]["status"] == "no_eligible_candidate", rejected_fit
+    assert rejected_fit["context"]["result"]["trials"][0]["status"] == "structure_failed"
     print(json.dumps({"wheel_import": True, "discovered_and_loaded": expected,
                       "capability_entry_point": "passed", "node_entry_point": "passed",
                       "production_entry_point": "passed", "budget_entry_point": "passed",
                       "compare_entry_point": "passed", "rank_entry_point": "passed",
-                      "pair_entry_point": "passed", "preview_wrapper": "present_not_executed",
+                      "pair_entry_point": "passed", "structure_entry_point": "passed",
+                      "fit_structure_gate": "passed", "preview_wrapper": "present_not_executed",
                       "host_probe": False}))
 finally:
     server.stop()

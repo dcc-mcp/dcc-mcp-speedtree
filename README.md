@@ -79,9 +79,12 @@ four-view and close-up review by an artist. See the
 The same skill also offers a full-versus-bare OBJ geometry comparison,
 Blender diagnostic four-view and card previews, and explicit silhouette
 comparison/ranking for existing candidates. Configure a trusted Blender 4+
-executable in `DCC_MCP_BLENDER_EXECUTABLE` before requesting previews. These
-are diagnostic renders and scores; reference image fitting, native Modeler
-view capture and artistic approval remain separate work.
+executable in `DCC_MCP_BLENDER_EXECUTABLE` before requesting previews.
+`fit_reference_modeler` can search a bounded set of explicitly supplied
+generator values with official full/bare exports, hierarchy and geometry
+gates, and four segmented-reference silhouette comparisons. These are
+diagnostic renders and scores; automatic reference segmentation, native
+Modeler view capture and artistic approval remain separate work.
 
 1. `discover_templates` and `inspect_authoring_catalog` enumerate installed
    generator templates and their stored properties. `inspect_graph` and
