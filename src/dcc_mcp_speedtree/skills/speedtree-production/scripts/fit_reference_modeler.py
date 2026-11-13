@@ -21,6 +21,7 @@ def main(
         "card_triangles",
         "max_branch_order",
         "max_secondary",
+        "plane_tolerance",
         "max_evaluations",
         "max_rounds",
         "resolution",
