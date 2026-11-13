@@ -20,7 +20,7 @@ def test_registered_contracts_preserve_read_only_hints_and_packaged_scripts(tmp_
         }
         assert server.load_skill("speedtree-official")
         actions = [a for a in server.list_actions("speedtree") if a.get("skill_name") in skills]
-        assert len(actions) == 22
+        assert len(actions) == 24
         action_names = {action["name"] for action in actions}
         assert {
             "speedtree_production__production_generate",
@@ -29,12 +29,17 @@ def test_registered_contracts_preserve_read_only_hints_and_packaged_scripts(tmp_
             "speedtree_production__validate_obj_pair",
             "speedtree_production__generate_diagnostic_views",
             "speedtree_production__rank_reference_candidates",
+            "speedtree_production__validate_branch_structure",
+            "speedtree_production__fit_reference_modeler",
         } <= action_names
         for action in actions:
             assert Path(action["source_file"]).is_file()
             assert action["input_schema"]["type"] == "object"
             assert action["output_schema"]["type"] == "object"
-            mutating = action["name"] == "speedtree_export__export_batch"
+            mutating = action["name"] in {
+                "speedtree_export__export_batch",
+                "speedtree_production__fit_reference_modeler",
+            }
             assert action["annotations"]["read_only_hint"] is not (
                 mutating
                 or action["name"] == "speedtree_nodes__edit_graph"
