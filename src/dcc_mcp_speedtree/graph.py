@@ -16,7 +16,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-MAX_XML_BYTES = 64 * 1024 * 1024
+MAX_XML_BYTES = 256 * 1024 * 1024
 MAX_OPERATIONS = 256
 _COMPONENT = re.compile(
     r"[A-Za-z_][A-Za-z_0-9]*(?:\[[1-9][0-9]*\])?(?:/[A-Za-z_][A-Za-z_0-9]*(?:\[[1-9][0-9]*\])?)*"

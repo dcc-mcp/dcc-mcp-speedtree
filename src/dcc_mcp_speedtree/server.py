@@ -100,7 +100,12 @@ class SpeedTreeMcpServer(DccServerBase):
         kwargs.setdefault(
             "minimal_mode",
             MinimalModeConfig(
-                skills=("speedtree-discovery", "speedtree-export", "speedtree-nodes"),
+                skills=(
+                    "speedtree-discovery",
+                    "speedtree-export",
+                    "speedtree-nodes",
+                    "speedtree-production",
+                ),
                 env_var_minimal="DCC_MCP_SPEEDTREE_MINIMAL",
                 env_var_default_tools="DCC_MCP_SPEEDTREE_DEFAULT_TOOLS",
             ),
