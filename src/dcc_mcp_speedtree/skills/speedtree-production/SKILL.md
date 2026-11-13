@@ -54,6 +54,15 @@ camera and whether it is a native Modeler view or a diagnostic render. Have an
 artist compare the results with the supplied references. Numeric budget
 compliance alone does not establish visual or production acceptance.
 
+For repeatable diagnostic images, configure `DCC_MCP_BLENDER_EXECUTABLE` to a
+trusted local Blender 4 or newer and call `generate_diagnostic_views` on an
+exported OBJ with an explicit material-to-wood/card mapping. The tool produces
+four orthographic views of the full and bare geometry, alpha masks, contact
+sheets, a card close-up and a manifest recording axes, camera scale, hashes and
+warnings. These are Blender diagnostic renders, not native Modeler views.
+Verify texture and opacity resolution and inspect the isolated card visually;
+shared materials may make material-based separation impossible.
+
 Use `validate_obj_budget` for independent readback of an exported Wavefront OBJ.
 Supply a mapping from each `usemtl` name to a category and set the requested
 limits, for example `{"cards": {"min": 800, "max": 800}}` with a total
@@ -61,6 +70,29 @@ maximum of 2000. Unmapped faces cause an `unverified` result unless a known
 limit has already failed. A `passed` result applies only to the supplied OBJ
 and mapping; it does not prove the OBJ came from the candidate, that material
 names correspond to generator roles, or that an artist approved the tree.
+
+When materials are shared, `validate_obj_pair` can compare a full OBJ with an
+OBJ exported from a copy with the intended card generators removed. The tool
+checks that bare-tree triangles are an exact geometric subset of the full
+export and counts the difference. Confirm the removed generator IDs and both
+export manifests independently: the geometry comparison alone cannot prove
+that the difference contains only cards, or that the exports are LOD0.
+
+`compare_reference_views` compares explicitly segmented front/back/left/right
+reference masks with the corresponding candidate masks. Each view requires a
+foreground mode (`dark`, `light`, or `alpha`) and may crop one region from a
+multi-view sheet. The tool writes overlays and IoU/Dice measurements after
+independently fitting each silhouette into a fixed canvas. Confirm view
+orientation, segmentation and camera settings manually. Normalization removes
+absolute position and scale; this comparison does not generate tree geometry
+or prove material, branch, or visual quality.
+
+To compare multiple already generated candidates, use
+`rank_reference_candidates` with the same four reference masks and explicit
+candidate masks. It writes per-candidate overlays and an auditable ranking.
+The resulting rank only describes silhouette overlap under the supplied
+segmentation and camera correspondence; it does not adjust generator settings
+or prove that the highest-ranked candidate is production ready.
 
 The workflow does not provide a native live Modeler editing API, material
 authoring, automatic reference matching or per-branch/per-card overrides. Use

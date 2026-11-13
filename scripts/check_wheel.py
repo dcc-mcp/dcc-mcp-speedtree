@@ -11,6 +11,7 @@ CHECK = r"""
 import json
 import runpy
 from pathlib import Path
+from PIL import Image, ImageDraw
 import dcc_mcp_speedtree
 from dcc_mcp_speedtree.server import SpeedTreeMcpServer
 
@@ -20,7 +21,7 @@ assert package.is_relative_to(root), (package, root)
 skills = package / "skills"
 assert (skills / "speedtree-official/metadata/depends.md").is_file()
 expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0,
-            "speedtree-nodes": 5, "speedtree-production": 2}
+            "speedtree-nodes": 5, "speedtree-production": 6}
 exe = root / "SpeedTree_Modeler.exe"
 exe.write_bytes(b"not executable; metadata-only fixture")
 server = SpeedTreeMcpServer(executable=str(exe), enable_gateway_failover=False,
@@ -41,7 +42,10 @@ try:
         mutating = action["name"] == "speedtree_export__export_batch"
         assert action["annotations"]["read_only_hint"] is not (
             mutating or action["name"] in {"speedtree_nodes__edit_graph",
-                                           "speedtree_production__production_generate"})
+                                           "speedtree_production__production_generate",
+                                           "speedtree_production__compare_reference_views",
+                                           "speedtree_production__generate_diagnostic_views",
+                                           "speedtree_production__rank_reference_candidates"})
         assert action["annotations"]["destructive_hint"] is mutating
     result = runpy.run_path(str(skills / "speedtree-discovery/scripts/inspect_capabilities.py"))["main"]()
     assert result["success"] and result["context"]["full_modeler_coverage"] is False
@@ -77,9 +81,35 @@ try:
         total_max_triangles=2, category_limits={"cards": {"min": 2, "max": 2}})
     assert budget["success"] and budget["context"]["status"] == "passed", budget
     assert budget["context"]["total_triangles"] == 2
+    bare = root / "bare.obj"
+    bare.write_text("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3\n", encoding="utf-8")
+    pair = runpy.run_path(str(skills / "speedtree-production/scripts/validate_obj_pair.py"))["main"](
+        full_path=str(obj), bare_path=str(bare), total_max_triangles=2, card_triangles=1)
+    assert pair["success"] and pair["context"]["status"] == "passed", pair
+    assert pair["context"]["full_minus_bare_triangles"] == 1
+    mask_path = root / "silhouette.png"
+    mask = Image.new("L", (40, 40), 0)
+    ImageDraw.Draw(mask).rectangle((10, 8, 29, 30), fill=255)
+    mask.save(mask_path)
+    specs = {view: {"path": str(mask_path), "mode": "light"}
+             for view in ("front", "back", "left", "right")}
+    compare = runpy.run_path(str(skills / "speedtree-production/scripts/compare_reference_views.py"))["main"](
+        references=specs, candidates=specs, output_dir=str(root / "compare"), canvas_size=64)
+    assert compare["success"] and compare["context"]["status"] == "diagnostic_only", compare
+    assert compare["context"]["mean_iou"] == 1.0
+    rank = runpy.run_path(str(skills / "speedtree-production/scripts/rank_reference_candidates.py"))["main"](
+        references=specs, candidate_sets={"A": specs, "B": specs},
+        output_dir=str(root / "rank"), canvas_size=64)
+    assert rank["success"] and rank["context"]["status"] == "diagnostic_only", rank
+    assert [x["candidate"] for x in rank["context"]["candidates"]] == ["A", "B"]
+    preview_entry = runpy.run_path(str(skills / "speedtree-production/scripts/generate_diagnostic_views.py"))
+    assert callable(preview_entry["main"])
+    assert (skills / "speedtree-production/scripts/_preview_worker.py").is_file()
     print(json.dumps({"wheel_import": True, "discovered_and_loaded": expected,
                       "capability_entry_point": "passed", "node_entry_point": "passed",
                       "production_entry_point": "passed", "budget_entry_point": "passed",
+                      "compare_entry_point": "passed", "rank_entry_point": "passed",
+                      "pair_entry_point": "passed", "preview_wrapper": "present_not_executed",
                       "host_probe": False}))
 finally:
     server.stop()

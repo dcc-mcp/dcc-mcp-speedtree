@@ -38,6 +38,28 @@ tools:
           additionalProperties: true
       additionalProperties: false
     output_schema: {type: object}
+  - name: compare_reference_views
+    description: Compare user-segmented four-view reference and candidate silhouettes with diagnostic overlays; does not fit parameters or perform artistic approval.
+    source_file: scripts/compare_reference_views.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: false
+      destructive_hint: false
+      idempotent_hint: false
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [references, candidates, output_dir]
+      properties:
+        references: {type: object}
+        candidates: {type: object}
+        output_dir: {type: string, minLength: 1, maxLength: 4096}
+        canvas_size: {type: integer, minimum: 64, maximum: 2048}
+      additionalProperties: false
+    output_schema: {type: object}
   - name: validate_obj_budget
     description: Independently count OBJ triangles against caller-provided material categories and limits; source provenance and visual acceptance remain unverified.
     source_file: scripts/validate_obj_budget.py
@@ -65,5 +87,73 @@ tools:
               min: {type: integer, minimum: 0}
               max: {type: integer, minimum: 0}
             additionalProperties: false
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: validate_obj_pair
+    description: Check full and bare OBJ triangle geometry and their difference; attribution to cards and export provenance must be independently verified.
+    source_file: scripts/validate_obj_pair.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [full_path, bare_path, total_max_triangles, card_triangles]
+      properties:
+        full_path: {type: string, minLength: 1, maxLength: 4096}
+        bare_path: {type: string, minLength: 1, maxLength: 4096}
+        total_max_triangles: {type: integer, minimum: 0}
+        card_triangles: {type: integer, minimum: 0}
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: generate_diagnostic_views
+    description: Render full and bare orthographic four-view OBJ diagnostics and a card close-up using the operator-configured trusted Blender executable.
+    source_file: scripts/generate_diagnostic_views.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: false
+      destructive_hint: false
+      idempotent_hint: false
+      open_world_hint: false
+    timeout_hint_secs: 660
+    input_schema:
+      type: object
+      required: [obj_path, output_dir, material_categories]
+      properties:
+        obj_path: {type: string, minLength: 1, maxLength: 4096}
+        output_dir: {type: string, minLength: 1, maxLength: 4096}
+        material_categories:
+          type: object
+          additionalProperties: {type: string, enum: [wood, card]}
+        resolution: {type: integer, minimum: 128, maximum: 2048}
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: rank_reference_candidates
+    description: Compare explicitly provided four-view masks for up to 32 candidates and rank their silhouette overlap; does not generate geometry or perform artistic approval.
+    source_file: scripts/rank_reference_candidates.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: false
+      destructive_hint: false
+      idempotent_hint: false
+      open_world_hint: false
+    timeout_hint_secs: 300
+    input_schema:
+      type: object
+      required: [references, candidate_sets, output_dir]
+      properties:
+        references: {type: object}
+        candidate_sets: {type: object, minProperties: 1, maxProperties: 32}
+        output_dir: {type: string, minLength: 1, maxLength: 4096}
+        canvas_size: {type: integer, minimum: 64, maximum: 2048}
       additionalProperties: false
     output_schema: {type: object}

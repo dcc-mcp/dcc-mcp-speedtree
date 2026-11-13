@@ -76,7 +76,11 @@ def _roles(graph, roles):
             for node in roles[child_role]:
                 if not descends(node, set(roles[parent_role])):
                     raise ValueError(f"{child_role} generator is not connected below {parent_role}")
-    branch_ids = set(roles.get("primary_branches", []) + roles.get("secondary_branches", []))
+    branch_ids = set(
+        roles.get("trunk", [])
+        + roles.get("primary_branches", [])
+        + roles.get("secondary_branches", [])
+    )
     if branch_ids:
         for node in roles.get("leaf_cards", []):
             if not descends(node, branch_ids):

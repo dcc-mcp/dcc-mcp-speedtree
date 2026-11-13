@@ -212,6 +212,16 @@ def test_leaf_cards_must_descend_from_mapped_branches(production_input, tmp_path
     assert not output.exists() or not any(output.iterdir())
 
 
+def test_leaf_cards_directly_attached_to_trunk_are_accepted(production_input, tmp_path):
+    source, operations, brief = production_input
+    operations += [
+        {"op": "disconnect", "source_id": "primary", "target_id": "leaves"},
+        {"op": "connect", "source_id": "trunk", "target_id": "leaves"},
+    ]
+    result = generate_project(source, tmp_path / "trunk-cards", operations, brief)
+    assert result["validation"]["graph_roles"] == "validated"
+
+
 def test_repeated_fixed_operations_preserve_graph_semantics(production_input, tmp_path):
     source, operations, brief = production_input
     first = generate_project(source, tmp_path / "first", operations, brief)
