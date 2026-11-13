@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 authors = [{name = "loonghao", email = "hal.long@outlook.com"}]
-dependencies = ["dcc-mcp-core>=0.20.22,<1.0.0"]
+dependencies = ["dcc-mcp-core>=0.20.22,<1.0.0", "Pillow>=10.0"]
 
 [project.scripts]
 dcc-mcp-speedtree = "dcc_mcp_speedtree.server:main"

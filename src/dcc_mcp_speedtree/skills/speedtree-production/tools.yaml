@@ -1,0 +1,253 @@
+tools:
+  - name: production_generate
+    description: Create a separate native project from a permitted reference and explicit generator operations, and record the production brief; geometry and visual acceptance are separate.
+    source_file: scripts/production_generate.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: false
+      destructive_hint: false
+      idempotent_hint: false
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [source_path, output_dir, operations, brief]
+      properties:
+        source_path: {type: string, minLength: 1, maxLength: 4096}
+        output_dir: {type: string, minLength: 1, maxLength: 4096}
+        operations:
+          type: array
+          maxItems: 256
+          items: {type: object}
+        brief:
+          type: object
+          properties:
+            dependencies:
+              type: array
+              items: {type: string, minLength: 1, maxLength: 4096}
+            references: {type: object}
+            roles:
+              type: object
+              additionalProperties:
+                type: array
+                items: {type: string, minLength: 1, maxLength: 128}
+            budgets: {type: object}
+            seed: {}
+          additionalProperties: true
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: compare_reference_views
+    description: Compare user-segmented four-view reference and candidate silhouettes with diagnostic overlays; does not fit parameters or perform artistic approval.
+    source_file: scripts/compare_reference_views.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: false
+      destructive_hint: false
+      idempotent_hint: false
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [references, candidates, output_dir]
+      properties:
+        references: {type: object}
+        candidates: {type: object}
+        output_dir: {type: string, minLength: 1, maxLength: 4096}
+        canvas_size: {type: integer, minimum: 64, maximum: 2048}
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: validate_obj_budget
+    description: Independently count OBJ triangles against caller-provided material categories and limits; source provenance and visual acceptance remain unverified.
+    source_file: scripts/validate_obj_budget.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [obj_path, material_categories, total_max_triangles, category_limits]
+      properties:
+        obj_path: {type: string, minLength: 1, maxLength: 4096}
+        material_categories: {type: object, additionalProperties: {type: string, minLength: 1}}
+        total_max_triangles: {type: integer, minimum: 0}
+        category_limits:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              min: {type: integer, minimum: 0}
+              max: {type: integer, minimum: 0}
+            additionalProperties: false
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: validate_obj_pair
+    description: Check full and bare OBJ triangle geometry and their difference; attribution to cards and export provenance must be independently verified.
+    source_file: scripts/validate_obj_pair.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [full_path, bare_path, total_max_triangles, card_triangles]
+      properties:
+        full_path: {type: string, minLength: 1, maxLength: 4096}
+        bare_path: {type: string, minLength: 1, maxLength: 4096}
+        total_max_triangles: {type: integer, minimum: 0}
+        card_triangles: {type: integer, minimum: 0}
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: generate_diagnostic_views
+    description: Render full and bare orthographic four-view OBJ diagnostics and a card close-up using the operator-configured trusted Blender executable.
+    source_file: scripts/generate_diagnostic_views.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: false
+      destructive_hint: false
+      idempotent_hint: false
+      open_world_hint: false
+    timeout_hint_secs: 660
+    input_schema:
+      type: object
+      required: [obj_path, output_dir, material_categories]
+      properties:
+        obj_path: {type: string, minLength: 1, maxLength: 4096}
+        output_dir: {type: string, minLength: 1, maxLength: 4096}
+        material_categories:
+          type: object
+          additionalProperties: {type: string, enum: [wood, card]}
+        resolution: {type: integer, minimum: 128, maximum: 2048}
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: rank_reference_candidates
+    description: Compare explicitly provided four-view masks for up to 32 candidates and rank their silhouette overlap; does not generate geometry or perform artistic approval.
+    source_file: scripts/rank_reference_candidates.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: false
+      destructive_hint: false
+      idempotent_hint: false
+      open_world_hint: false
+    timeout_hint_secs: 300
+    input_schema:
+      type: object
+      required: [references, candidate_sets, output_dir]
+      properties:
+        references: {type: object}
+        candidate_sets: {type: object, minProperties: 1, maxProperties: 32}
+        output_dir: {type: string, minLength: 1, maxLength: 4096}
+        canvas_size: {type: integer, minimum: 64, maximum: 2048}
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: validate_branch_structure
+    description: Audit stored trunk and primary/secondary branch ancestry and explicit generator-count limits; this does not inspect regenerated geometry.
+    source_file: scripts/validate_branch_structure.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [source_path, trunk_id]
+      properties:
+        source_path: {type: string, minLength: 1, maxLength: 4096}
+        trunk_id: {type: string, minLength: 1, maxLength: 128}
+        max_branch_order: {type: integer, minimum: 0, maximum: 10}
+        max_secondary: {type: integer, minimum: 0}
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: validate_card_planes
+    description: Check mapped OBJ card components are single approximately planar two-triangle quads; texture, UV and export provenance remain unverified.
+    source_file: scripts/validate_card_planes.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [full_obj, material_categories]
+      properties:
+        full_obj: {type: string, minLength: 1, maxLength: 4096}
+        material_categories: {type: object, additionalProperties: {type: string, enum: [wood, card]}}
+        tolerance: {type: number, minimum: 0, maximum: 1}
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: fit_reference_modeler
+    description: Run a bounded search over explicit generator property values, officially export full and card-removed candidates, check geometry and hierarchy, then score four segmented reference silhouettes. Visual approval and LOD/units remain unverified.
+    source_file: scripts/fit_reference_modeler.py
+    execution: async
+    requires_in_process: true
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: false
+      deferred_hint: true
+    timeout_hint_secs: 14400
+    input_schema:
+      type: object
+      required: [source_path, output_dir, parameters, references, preset_path, material_categories, brief, trunk_id]
+      properties:
+        source_path: {type: string, minLength: 1, maxLength: 4096}
+        output_dir: {type: string, minLength: 1, maxLength: 4096}
+        preset_path: {type: string, minLength: 1, maxLength: 4096}
+        trunk_id: {type: string, minLength: 1, maxLength: 128}
+        parameters:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            type: object
+            required: [node_id, name, initial, values]
+            properties:
+              node_id: {type: string, minLength: 1, maxLength: 128}
+              name: {type: string, minLength: 1, maxLength: 512}
+              component: {type: string, minLength: 1, maxLength: 1024}
+              initial: {type: number}
+              values: {type: array, minItems: 1, maxItems: 16, items: {type: number}}
+            additionalProperties: false
+        references: {type: object}
+        material_categories: {type: object, additionalProperties: {type: string, enum: [wood, card]}}
+        brief: {type: object}
+        base_operations: {type: array, maxItems: 256, items: {type: object}}
+        total_max_triangles: {type: integer, minimum: 0}
+        card_triangles: {type: integer, minimum: 0}
+        max_branch_order: {type: integer, minimum: 0, maximum: 10}
+        max_secondary: {type: integer, minimum: 0}
+        plane_tolerance: {type: number, minimum: 0, maximum: 1}
+        max_evaluations: {type: integer, minimum: 1, maximum: 32}
+        max_rounds: {type: integer, minimum: 1, maximum: 4}
+        resolution: {type: integer, minimum: 128, maximum: 2048}
+        candidate_view_map: {type: object}
+      additionalProperties: false
+    output_schema: {type: object}
