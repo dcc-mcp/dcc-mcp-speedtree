@@ -94,7 +94,21 @@ The resulting rank only describes silhouette overlap under the supplied
 segmentation and camera correspondence; it does not adjust generator settings
 or prove that the highest-ranked candidate is production ready.
 
-The workflow does not provide a native live Modeler editing API, material
-authoring, automatic reference matching or per-branch/per-card overrides. Use
-the existing documented export and UI workflows for operations outside its
-verified scope.
+`fit_reference_modeler` runs bounded coordinate descent over explicitly
+supplied, observed generator property values. For each candidate it creates a
+separate SPM, checks the configured trunk/branch graph constraints, removes
+Leaf/Leaf Mesh/Frond generators on another copy, and performs official Modeler
+full/bare OBJ exports. It independently checks the triangle delta, confirms
+that material-separated wood matches the bare OBJ, and scores four segmented
+silhouette masks. Configure both `DCC_MCP_SPEEDTREE_EXECUTABLE` and
+`DCC_MCP_BLENDER_EXECUTABLE` to trusted local installations. Set a small
+evaluation count and inspect the asynchronous Core job's candidate evidence.
+The default structure limit permits at most secondary Branch generators;
+set `max_secondary` when a specific generator-count limit applies.
+
+Masks, view directions and search ranges are caller supplied. Coordinate
+descent is not a global optimum or a substitute for visual approval. LOD,
+effective units, card planarity, complete dependency discovery and native
+Modeler views remain unverified. A selected candidate is not promoted over the
+reference project. The workflow does not provide a native live Modeler editing
+API, material authoring or per-instance branch/card overrides.
