@@ -76,6 +76,12 @@ material/category mappings. Both tools report their verification limits: they
 do not fit reference images, prove material-to-generator ownership, or replace
 four-view and close-up review by an artist. See the
 [production workflow](src/dcc_mcp_speedtree/skills/speedtree-production/SKILL.md).
+The same skill also offers a full-versus-bare OBJ geometry comparison,
+Blender diagnostic four-view and card previews, and explicit silhouette
+comparison/ranking for existing candidates. Configure a trusted Blender 4+
+executable in `DCC_MCP_BLENDER_EXECUTABLE` before requesting previews. These
+are diagnostic renders and scores; reference image fitting, native Modeler
+view capture and artistic approval remain separate work.
 
 1. `discover_templates` and `inspect_authoring_catalog` enumerate installed
    generator templates and their stored properties. `inspect_graph` and
