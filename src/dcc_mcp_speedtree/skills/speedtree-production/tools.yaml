@@ -1,0 +1,69 @@
+tools:
+  - name: production_generate
+    description: Create a separate native project from a permitted reference and explicit generator operations, and record the production brief; geometry and visual acceptance are separate.
+    source_file: scripts/production_generate.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: false
+      destructive_hint: false
+      idempotent_hint: false
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [source_path, output_dir, operations, brief]
+      properties:
+        source_path: {type: string, minLength: 1, maxLength: 4096}
+        output_dir: {type: string, minLength: 1, maxLength: 4096}
+        operations:
+          type: array
+          maxItems: 256
+          items: {type: object}
+        brief:
+          type: object
+          properties:
+            dependencies:
+              type: array
+              items: {type: string, minLength: 1, maxLength: 4096}
+            references: {type: object}
+            roles:
+              type: object
+              additionalProperties:
+                type: array
+                items: {type: string, minLength: 1, maxLength: 128}
+            budgets: {type: object}
+            seed: {}
+          additionalProperties: true
+      additionalProperties: false
+    output_schema: {type: object}
+  - name: validate_obj_budget
+    description: Independently count OBJ triangles against caller-provided material categories and limits; source provenance and visual acceptance remain unverified.
+    source_file: scripts/validate_obj_budget.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [obj_path, material_categories, total_max_triangles, category_limits]
+      properties:
+        obj_path: {type: string, minLength: 1, maxLength: 4096}
+        material_categories: {type: object, additionalProperties: {type: string, minLength: 1}}
+        total_max_triangles: {type: integer, minimum: 0}
+        category_limits:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              min: {type: integer, minimum: 0}
+              max: {type: integer, minimum: 0}
+            additionalProperties: false
+      additionalProperties: false
+    output_schema: {type: object}

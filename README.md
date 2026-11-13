@@ -68,6 +68,15 @@ Read the [capability audit](docs/capability-audit.md) for the complete tool chai
 and the limits of modeling, materials, LOD, wind, collision, and cancellation.
 Use `inspect_capabilities` for a machine-readable scope report without a GUI.
 
+For a reference-based production candidate, `speedtree-production` provides
+`production_generate` to apply explicit edits to a separate SPM, copy declared
+and observed texture dependencies, and record a brief and manifest. After an
+official OBJ export, `validate_obj_budget` counts triangles using explicit
+material/category mappings. Both tools report their verification limits: they
+do not fit reference images, prove material-to-generator ownership, or replace
+four-view and close-up review by an artist. See the
+[production workflow](src/dcc_mcp_speedtree/skills/speedtree-production/SKILL.md).
+
 1. `discover_templates` and `inspect_authoring_catalog` enumerate installed
    generator templates and their stored properties. `inspect_graph` and
    `inspect_properties` read the selected source. `edit_graph` adds, duplicates,
