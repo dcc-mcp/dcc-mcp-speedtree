@@ -88,6 +88,37 @@ def test_selects_best_eligible_candidate_and_checks_geometry(fit_fixture):
     assert source.read_bytes() == before
 
 
+def test_fitting_rejects_folded_cards_even_when_budget_passes(fit_fixture):
+    source, full, bare, params = fit_fixture
+    vertices = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 2 0 0\nv 3 0 0\nv 3 1 0.3\nv 2 1 0\n"
+    bare.write_text(vertices + "f 1 2 3\n", encoding="utf-8")
+    full.write_text(
+        vertices + "usemtl bark\nf 1 2 3\nusemtl leaf\nf 4 5 6\nf 4 6 7\n", encoding="utf-8"
+    )
+
+    def evaluator(trial, operations):
+        return {
+            "full_obj_path": str(full),
+            "bare_obj_path": str(bare),
+            "comparison": _comparison(0.5),
+            "provenance": {"verified": True},
+            "structure": {"status": "passed"},
+        }
+
+    result = fit_reference_parameters(
+        source,
+        params,
+        evaluator,
+        total_max_triangles=3,
+        card_triangles=2,
+        max_evaluations=1,
+        card_plane_categories={"bark": "wood", "leaf": "card"},
+    )
+    assert result["status"] == "no_eligible_candidate"
+    assert result["trials"][0]["geometry"]["status"] == "passed"
+    assert result["trials"][0]["status"] == "card_planes_failed"
+
+
 def test_does_not_trust_evaluator_budget_or_structure_claims(fit_fixture):
     _, full, bare, _ = fit_fixture
 

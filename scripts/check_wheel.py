@@ -21,7 +21,7 @@ assert package.is_relative_to(root), (package, root)
 skills = package / "skills"
 assert (skills / "speedtree-official/metadata/depends.md").is_file()
 expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0,
-            "speedtree-nodes": 5, "speedtree-production": 8}
+            "speedtree-nodes": 5, "speedtree-production": 9}
 exe = root / "SpeedTree_Modeler.exe"
 exe.write_bytes(b"not executable; metadata-only fixture")
 server = SpeedTreeMcpServer(executable=str(exe), enable_gateway_failover=False,
@@ -78,12 +78,19 @@ try:
     assert manifest["candidate_graph"]["generators"][0]["name"] == "Production candidate"
     assert Path(context["project_path"]).is_file()
     obj = root / "fixture.obj"
-    obj.write_text("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nusemtl leaf\nf 1 2 3 4\n", encoding="utf-8")
+    obj.write_text("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nusemtl leaf\nf 1 2 3\nf 1 3 4\n", encoding="utf-8")
     budget = runpy.run_path(str(skills / "speedtree-production/scripts/validate_obj_budget.py"))["main"](
         obj_path=str(obj), material_categories={"leaf": "cards"},
         total_max_triangles=2, category_limits={"cards": {"min": 2, "max": 2}})
     assert budget["success"] and budget["context"]["status"] == "passed", budget
     assert budget["context"]["total_triangles"] == 2
+    plane_action = next(action for action in actions
+                        if action["name"] == "speedtree_production__validate_card_planes")
+    assert plane_action["annotations"]["read_only_hint"] is True
+    planes = runpy.run_path(str(skills / "speedtree-production/scripts/validate_card_planes.py"))["main"](
+        full_obj=str(obj), material_categories={"leaf": "card"})
+    assert planes["success"] and planes["context"]["status"] == "passed", planes
+    assert planes["context"]["card_components"] == 1 and planes["context"]["card_triangles"] == 2
     bare = root / "bare.obj"
     bare.write_text("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3\n", encoding="utf-8")
     pair = runpy.run_path(str(skills / "speedtree-production/scripts/validate_obj_pair.py"))["main"](
@@ -139,7 +146,8 @@ try:
                       "production_entry_point": "passed", "budget_entry_point": "passed",
                       "compare_entry_point": "passed", "rank_entry_point": "passed",
                       "pair_entry_point": "passed", "structure_entry_point": "passed",
-                      "fit_structure_gate": "passed", "preview_wrapper": "present_not_executed",
+                      "fit_structure_gate": "passed", "planarity_entry_point": "passed",
+                      "preview_wrapper": "present_not_executed",
                       "host_probe": False}))
 finally:
     server.stop()

@@ -17,6 +17,7 @@ from dcc_mcp_core.cancellation import DccMcpCancelledError, check_cancelled
 
 from .graph import SpeedTreeGraph
 from .production_pair import validate_obj_pair
+from .production_planarity import validate_card_planes
 from .reference_match import VIEWS
 
 MAX_PARAMETERS = 32
@@ -149,6 +150,8 @@ def fit_reference_parameters(
     max_evaluations=32,
     max_rounds=2,
     require_structure=True,
+    card_plane_categories=None,
+    plane_tolerance=0.001,
 ):
     """Search a finite, caller-defined parameter grid by coordinate descent.
 
@@ -255,6 +258,14 @@ def fit_reference_parameters(
             if geometry["status"] != "passed":
                 record["status"] = "budget_failed"
                 return
+            if card_plane_categories is not None:
+                planes = validate_card_planes(
+                    evaluated["full_obj_path"], card_plane_categories, plane_tolerance
+                )
+                record["card_planes"] = planes
+                if planes["status"] != "passed":
+                    record["status"] = "card_planes_failed"
+                    return
             mean, scores, references = _comparison(evaluated.get("comparison"))
             if reference_identity is not None and references != reference_identity:
                 invalid_reference = True
