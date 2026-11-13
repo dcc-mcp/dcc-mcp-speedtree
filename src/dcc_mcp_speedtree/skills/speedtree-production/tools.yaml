@@ -179,6 +179,27 @@ tools:
         max_secondary: {type: integer, minimum: 0}
       additionalProperties: false
     output_schema: {type: object}
+  - name: validate_card_planes
+    description: Check mapped OBJ card components are single approximately planar two-triangle quads; texture, UV and export provenance remain unverified.
+    source_file: scripts/validate_card_planes.py
+    execution: sync
+    affinity: any
+    enforce_thread_affinity: true
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: false
+    timeout_hint_secs: 60
+    input_schema:
+      type: object
+      required: [full_obj, material_categories]
+      properties:
+        full_obj: {type: string, minLength: 1, maxLength: 4096}
+        material_categories: {type: object, additionalProperties: {type: string, enum: [wood, card]}}
+        tolerance: {type: number, minimum: 0, maximum: 1}
+      additionalProperties: false
+    output_schema: {type: object}
   - name: fit_reference_modeler
     description: Run a bounded search over explicit generator property values, officially export full and card-removed candidates, check geometry and hierarchy, then score four segmented reference silhouettes. Visual approval and LOD/units remain unverified.
     source_file: scripts/fit_reference_modeler.py
@@ -223,6 +244,7 @@ tools:
         card_triangles: {type: integer, minimum: 0}
         max_branch_order: {type: integer, minimum: 0, maximum: 10}
         max_secondary: {type: integer, minimum: 0}
+        plane_tolerance: {type: number, minimum: 0, maximum: 1}
         max_evaluations: {type: integer, minimum: 1, maximum: 32}
         max_rounds: {type: integer, minimum: 1, maximum: 4}
         resolution: {type: integer, minimum: 128, maximum: 2048}

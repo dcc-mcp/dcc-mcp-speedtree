@@ -82,7 +82,7 @@ comparison/ranking for existing candidates. Configure a trusted Blender 4+
 executable in `DCC_MCP_BLENDER_EXECUTABLE` before requesting previews.
 `fit_reference_modeler` can search a bounded set of explicitly supplied
 generator values with official full/bare exports, hierarchy and geometry
-gates, and four segmented-reference silhouette comparisons. These are
+gates, mapped-card planarity checks, and four segmented-reference silhouette comparisons. These are
 diagnostic renders and scores; automatic reference segmentation, native
 Modeler view capture and artistic approval remain separate work.
 

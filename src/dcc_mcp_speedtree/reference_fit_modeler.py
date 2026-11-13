@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from dcc_mcp_core.cancellation import check_cancelled
@@ -11,6 +12,7 @@ from .export import export_batch, fingerprint, verify_export
 from .graph import GraphError, SpeedTreeGraph
 from .production import generate_project
 from .production_mapping import validate_material_bare
+from .production_planarity import validate_card_planes
 from .production_preview import generate_diagnostic_views
 from .production_structure import validate_branch_structure
 from .reference_match import VIEWS, compare_reference_views
@@ -70,6 +72,7 @@ def fit_reference_modeler(
     card_triangles=800,
     max_branch_order=2,
     max_secondary=None,
+    plane_tolerance=0.001,
     max_evaluations=6,
     max_rounds=1,
     resolution=512,
@@ -95,6 +98,13 @@ def fit_reference_modeler(
         raise ValueError("Output must be a new directory that does not contain the source")
     if not isinstance(brief, dict):
         raise ValueError("brief must be an object")
+    if (
+        isinstance(plane_tolerance, bool)
+        or not isinstance(plane_tolerance, (int, float))
+        or not math.isfinite(plane_tolerance)
+        or not 0 <= plane_tolerance <= 1
+    ):
+        raise ValueError("plane_tolerance must be finite and between 0 and 1")
     if not isinstance(references, dict) or set(references) != set(VIEWS):
         raise ValueError("Four explicit segmented reference views are required")
     view_map = {view: view for view in VIEWS} if candidate_view_map is None else candidate_view_map
@@ -152,6 +162,24 @@ def fit_reference_modeler(
         mapping_audit = validate_material_bare(full_obj, bare_obj, material_categories)
         if mapping_audit["status"] != "passed":
             raise ValueError("Material mapping does not match independently exported bare geometry")
+        plane_audit = validate_card_planes(full_obj, material_categories, plane_tolerance)
+        provenance = {
+            "verified": True,
+            "card_removal": removal,
+            "export_manifest": result["manifest_path"],
+            "candidate_project": str(full),
+            "candidate_manifest": candidate["manifest_path"],
+            "material_mapping_check": mapping_audit,
+        }
+        if plane_audit["status"] != "passed":
+            receipt = {
+                "full_obj_path": full_obj,
+                "bare_obj_path": bare_obj,
+                "structure": structure,
+                "provenance": provenance,
+            }
+            (trial / "evaluation.json").write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+            return receipt
         preview = generate_diagnostic_views(
             full_obj, trial / "preview", material_categories, resolution
         )
@@ -165,20 +193,13 @@ def fit_reference_modeler(
         }
         comparison = compare_reference_views(references, candidate_masks, trial / "comparison")
         check_cancelled()
+        provenance["preview_manifest"] = preview["manifest_path"]
         receipt = {
             "full_obj_path": full_obj,
             "bare_obj_path": bare_obj,
             "comparison": comparison,
             "structure": structure,
-            "provenance": {
-                "verified": True,
-                "card_removal": removal,
-                "export_manifest": result["manifest_path"],
-                "candidate_project": str(full),
-                "candidate_manifest": candidate["manifest_path"],
-                "preview_manifest": preview["manifest_path"],
-                "material_mapping_check": mapping_audit,
-            },
+            "provenance": provenance,
         }
         (trial / "evaluation.json").write_text(json.dumps(receipt, indent=2), encoding="utf-8")
         return receipt
@@ -193,6 +214,8 @@ def fit_reference_modeler(
         max_evaluations=max_evaluations,
         max_rounds=max_rounds,
         require_structure=True,
+        card_plane_categories=material_categories,
+        plane_tolerance=plane_tolerance,
     )
     try:
         inputs_changed = (
@@ -218,7 +241,7 @@ def fit_reference_modeler(
     report["limitations"] = [
         "Fitting uses segmented silhouette overlap and does not prove visual or material quality.",
         "The graph audit checks Branch generator ancestry, not generated branch count or appearance.",
-        "Card generator types and a geometry difference do not prove all card faces are planes.",
+        "Planarity uses a configured tolerance and does not verify UVs or textures.",
         "Modeler export LOD, effective units and absolute dimensions require independent verification.",
     ]
     manifest = output / "fit-report.json"
