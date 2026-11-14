@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/dcc-mcp/dcc-mcp-speedtree/compare/v0.1.2...v0.1.3) (2026-11-14)
+
+
+### Documentation
+
+* refresh the generated DCC-MCP host matrix pointer ([51dc1e9](https://github.com/dcc-mcp/dcc-mcp-speedtree/commit/51dc1e90b6e5f62b5112d84fe4dca67f0ebee5c7))
+
 ## [0.1.2](https://github.com/dcc-mcp/dcc-mcp-speedtree/compare/v0.1.1...v0.1.2) (2026-10-10)
 
 
