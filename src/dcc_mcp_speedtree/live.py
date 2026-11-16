@@ -38,10 +38,24 @@ saved file and returns a structured retryable receipt; ``undo`` consumes its
 history only after the reload is confirmed; a screenshot failure after a
 successful reload is observation loss only, never a rollback.
 
-These are limited guarantees: after a failed reload the Modeler GUI state is
-UNKNOWN, the active document is read from the bound window title and is NOT
-verified, and a modal dialog cannot be observed in ``pixels_only`` mode. No
-controlled fake counts as native GUI acceptance.
+Delivery and effect are reported as two different facts. A menu command the
+runtime did not confirm as delivered -- ``success``, ``delivery_completed`` and
+``post_dispatch_validated`` must each be exactly ``True``; a structured false is
+a failure even though Core raises nothing -- is refused, and ``apply`` checks
+the save BEFORE any history copy, staged edit or disk write. A command that was
+delivered still reports ``verification.status = "unknown"``: the runtime reports
+the action's ``effect`` as ``unverifiable`` and the only same-task observations
+are native pixels and window state, neither of which proves the Modeler applied
+it. A fresh screenshot after the action is observation, not effect
+verification. Nothing here sets ``effect = "verified"`` and no self-reported
+flag, grant or environment switch is introduced.
+
+These are limited guarantees: after a reload that was not delivered the Modeler
+GUI state is UNKNOWN; ``undo`` restores the file on disk and delivers the
+reload but keeps the only history snapshot instead of spending it on an
+unverified effect; the active document is read from the bound window title and
+is NOT verified; and a modal dialog cannot be observed in ``pixels_only`` mode.
+No controlled fake counts as native GUI acceptance.
 """
 
 from __future__ import annotations
@@ -68,6 +82,22 @@ TRUSTED_SESSION_PARAM = "trusted_speedtree_live_session"
 # Parsing is best-effort and always reported as unverified: pixels_only exposes
 # no accessibility tree and no document path.
 _TITLE_SEPARATORS = (" - ", " – ", " — ")
+
+# Post-state statements for a reload that was DELIVERED but whose application
+# effect the runtime reports as unverifiable. These are kept as data, never
+# upgraded to "confirmed" and never turned into a failure by themselves.
+_APPLY_UNVERIFIED_NOTE = (
+    "The edit is committed on disk and the File > Revert to saved command was "
+    "delivered, but the runtime reports its effect as unverifiable and no "
+    "same-task observation proves the Modeler reloaded it. The history snapshot "
+    "is retained; verify the Modeler before trusting the view."
+)
+_UNDO_UNVERIFIED_NOTE = (
+    "The previous file content is restored on disk and the reload command was "
+    "delivered, but the runtime reports its effect as unverifiable, so the "
+    "history snapshot is kept instead of being consumed. Verify the Modeler "
+    "before treating the undo as complete."
+)
 
 
 class LiveError(RuntimeError):
@@ -97,6 +127,60 @@ def _require_session(session):
             }
         )
     return session
+
+
+def _delivery_confirmed(result):
+    """Whether the runtime confirmed the physical action was DELIVERED.
+
+    A structured ``success: false`` is a failure even though Core raises
+    nothing, so delivery is checked as data, never inferred from the absence of
+    an exception. This is about delivery only: the application EFFECT stays
+    unverified either way.
+    """
+    from .trusted_session import delivery_confirmed
+
+    return delivery_confirmed(result)
+
+
+def _delivery_failure(phase, result):
+    """Truthful payload for an action that was never confirmed delivered."""
+    payload = {
+        "error": f"{phase}_not_confirmed",
+        "phase": phase,
+        "success": result.get("success"),
+        "delivery_completed": result.get("delivery_completed"),
+        "post_dispatch_validated": result.get("post_dispatch_validated"),
+        "effect": result.get("effect"),
+        "gui_state": "unknown",
+        "message": (
+            f"The Modeler {phase} command was not confirmed delivered "
+            f"(success={result.get('success')!r}, "
+            f"delivery_completed={result.get('delivery_completed')!r}). "
+            "Refusing to treat it as done."
+        ),
+    }
+    return LiveError(payload)
+
+
+def _reload_view(reload):
+    """Delivery/effect view of one reload, without claiming the effect."""
+    return {
+        "delivered": _delivery_confirmed(reload),
+        "effect": reload.get("effect", "unverifiable"),
+        "verification_required": reload.get("verification_required", True),
+        "verification": reload.get("verification"),
+    }
+
+
+def _pending_verification(history_snapshot, history_retained, note):
+    """A truthful post-state statement for a delivered but unverified reload."""
+    return {
+        "status": "unknown",
+        "history_retained": history_retained,
+        "history_snapshot": str(history_snapshot) if history_retained else None,
+        "established_by": None,
+        "message": note,
+    }
 
 
 def _history(src: Path) -> Path:
@@ -215,9 +299,12 @@ def _document_from_title(title):
     return head or None
 
 
-def _require_active(bounded, src: Path, process_id):
+def _require_active(bounded, src: Path):
     """Confirm the bound window is showing ``src`` before any write.
 
+    The caller must already have validated an explicit ``process_id`` through
+    ``bounded.require_target``; this check only compares the bound window's
+    document, so a caller PID can never redirect the write to another window.
     The document name comes from the bound window title only. Pixels-only
     exposes no accessibility tree and no document path, so it is reported as
     unverified and an unparseable title is refused instead of assumed.
@@ -317,17 +404,32 @@ def open_recent(path, process_id=None, *, session=None):
 
 
 def save(process_id=None, *, session=None):
-    """Ask the Modeler to save the active document (File > Save)."""
+    """Ask the Modeler to save the active document (File > Save).
+
+    A delivery the runtime did not confirm is a failure: it is refused instead
+    of being reported as a save.
+    """
     bounded = _require_session(session)
-    bounded.require_target(process_id)
-    return bounded.menu("save")
+    bounded.require_target(process_id)  # before any native read or output work
+    result = bounded.menu("save")
+    if not _delivery_confirmed(result):
+        raise _delivery_failure("save", result)
+    return result
 
 
 def revert(process_id=None, settle_seconds=3.0, shot=True, *, session=None):
-    """Reload the saved document (File > Revert to saved)."""
+    """Reload the saved document (File > Revert to saved).
+
+    An unconfirmed delivery is refused. A confirmed delivery still reports
+    ``verification.status = "unknown"``: the command reached the window, but the
+    runtime reports its effect as unverifiable and no same-task observation
+    proves the Modeler reloaded the file.
+    """
     bounded = _require_session(session)
-    bounded.require_target(process_id)
+    bounded.require_target(process_id)  # before any native read or output work
     result = bounded.menu("revert")
+    if not _delivery_confirmed(result):
+        raise _delivery_failure("revert", result)
     if shot:
         time.sleep(settle_seconds)
         result["screenshot"] = screenshot(result["process_id"], session=bounded)["path"]
@@ -337,11 +439,19 @@ def revert(process_id=None, settle_seconds=3.0, shot=True, *, session=None):
 def _reload_and_observe(bounded, settle_seconds):
     """Reload the document (the commit boundary), then observe it separately.
 
+    A reload that was never confirmed DELIVERED is a hard failure and is
+    raised, so callers compensate. A reload that was delivered is returned even
+    though its effect is unverifiable: taking a fresh observation afterwards is
+    observation, not effect verification, and must not be mistaken for proof
+    that the Modeler reloaded the file.
+
     A screenshot failure is an observation failure, NOT an uncommitted
     transaction: it is returned as ``(None, detail)`` instead of being raised,
     so callers never redo or wrongly roll back a committed mutation.
     """
     reload = bounded.menu("revert")
+    if not _delivery_confirmed(reload):
+        raise _delivery_failure("reload", reload)
     try:
         time.sleep(settle_seconds)
         return reload, screenshot(bounded.bound_process_id, session=bounded)["path"], None
@@ -361,9 +471,13 @@ def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None
     owned by this call alone, so earlier recovery material is never touched.
     """
     bounded = _require_session(session)
+    bounded.require_target(process_id)  # before any native read, path, history or output work
     src = Path(path).resolve(strict=True)
-    pid = _require_active(bounded, src, process_id)
-    bounded.menu("save")  # keeps the user's own GUI edits in the file we edit
+    pid = _require_active(bounded, src)
+    saved = bounded.menu("save")  # keeps the user's own GUI edits in the file we edit
+    if not _delivery_confirmed(saved):
+        # Nothing has been written yet: refuse before any history or staging.
+        raise _delivery_failure("save", saved)
     history_dir = _history(src)
     history_dir.mkdir(parents=True, exist_ok=True)
     snap = history_dir / f"{datetime.now():%Y%m%d_%H%M%S_%f}{src.suffix}"
@@ -421,6 +535,12 @@ def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None
         "screenshot": observed,
         "reload_effect": reload.get("effect"),
         "reload_verification_required": reload.get("verification_required", True),
+        "reload": _reload_view(reload),
+        "verification": _pending_verification(snap, True, _APPLY_UNVERIFIED_NOTE),
+        "retry": (
+            "Verify the Modeler is showing the edited document; the history "
+            "snapshot is retained so live_undo can restore it."
+        ),
     }
     if stage_residue:
         result["staged_retained"] = stage_residue
@@ -437,8 +557,9 @@ def undo(path, process_id=None, settle_seconds=3.0, *, session=None):
     same undo can be retried; a failed restore keeps it as the only backup.
     """
     bounded = _require_session(session)
+    bounded.require_target(process_id)  # before any native read, path, history or output work
     src = Path(path).resolve(strict=True)
-    pid = _require_active(bounded, src, process_id)
+    pid = _require_active(bounded, src)
     snaps = _snapshots(src)
     if not snaps:
         raise LiveError({"error": "no_history", "message": f"No live history for {src.name}"})
@@ -461,7 +582,9 @@ def undo(path, process_id=None, settle_seconds=3.0, *, session=None):
             history_retained=True,
             retry="Retry undo to reload the already-restored file.",
         ) from exc
-    _cleanup_staged(snap)  # consume history only after a confirmed reload
+    # The reload was DELIVERED but its effect is unverifiable, so the only
+    # backup is kept: deleting it here would discard the user's undo for a
+    # reload that may never have happened.
     result = {
         "path": str(src),
         "process_id": pid,
@@ -470,6 +593,13 @@ def undo(path, process_id=None, settle_seconds=3.0, *, session=None):
         "screenshot": observed,
         "reload_effect": reload.get("effect"),
         "reload_verification_required": reload.get("verification_required", True),
+        "reload": _reload_view(reload),
+        "verification": _pending_verification(snap, True, _UNDO_UNVERIFIED_NOTE),
+        "retry": (
+            "The file was restored on disk and the reload was delivered, but its "
+            "effect is unverified; confirm the Modeler before treating the undo "
+            "as complete. The snapshot is retained so the retry cannot lose it."
+        ),
     }
     if shot_error is not None:
         result["screenshot_error"] = shot_error

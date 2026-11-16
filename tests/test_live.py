@@ -70,16 +70,19 @@ def test_apply_edits_in_place_snapshots_and_reloads(gui, tmp_path):
     assert gui.transport.action_keys() == ["ctrl+s", "ctrl+r"]
 
 
-def test_undo_restores_the_previous_state_and_consumes_history(gui, tmp_path):
+def test_undo_restores_the_previous_state_and_keeps_the_backup(gui, tmp_path):
+    """The disk restore is real; the backup survives an unverified reload."""
     tree = write_tree(tmp_path / "tree.spm")
     live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     result = live.undo(tree, settle_seconds=0, session=gui.session)
     assert length(tree) == "2"
-    assert result["undo_depth"] == 0
-    assert not list(live._snapshots(tree))
-    with pytest.raises(live.LiveError) as raised:
-        live.undo(tree, settle_seconds=0, session=gui.session)
-    assert raised.value.payload["error"] == "no_history"
+    assert result["undo_depth"] == 1, "the backup is retained while the reload is unverified"
+    assert result["verification"]["status"] == "unknown"
+    assert Path(result["verification"]["history_snapshot"]).is_file()
+    # A retained snapshot means a repeat undo can never report "no history".
+    again = live.undo(tree, settle_seconds=0, session=gui.session)
+    assert again["undo_depth"] == 1
+    assert length(tree) == "2"
 
 
 def test_save_and_revert_report_the_unverifiable_effect(gui):

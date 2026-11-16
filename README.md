@@ -106,15 +106,20 @@ All observation and input go through the project's dcc-cua / DCC-MCP
 `ui-control` route: one owned, integrity-pinned runtime task bound to an exact
 PID and window handle, with a bounded action ceiling. Without that trusted
 server-owned session every entry fails closed with
-`error=no_authorized_ui_route`. `live_open` is not available on this route — the
-owned task cannot target the file dialog and `pixels_only` cannot read the menu
-— so open the document with dcc-cua / DCC-MCP `ui-control` first.
+`error=no_authorized_ui_route`. `live_open` is not available on this route: the
+supported pixels-only startup configuration exposes no element targeting, so a
+recents menu entry cannot be located or activated. Open the document with
+dcc-cua / DCC-MCP `ui-control` first.
 
-Two things are deliberately not claimed. Physical menu actions are delivered
-through the authorized runtime, which reports their `effect` as `unverifiable`;
-the adapter propagates that instead of asserting success. The active document is
-read from the bound window title and is reported as unverified; a modal dialog
-cannot be observed in `pixels_only` mode. See
+Three things are deliberately not claimed. A menu command the runtime did not
+confirm as delivered (`success`/`delivery_completed`/`post_dispatch_validated`
+not all true) is refused, and `live_apply` refuses it before any history copy,
+staged edit or disk write. A delivered command still reports
+`verification.status: "unknown"`, because the runtime reports the action's
+`effect` as `unverifiable` and no same-task observation proves the Modeler
+applied it, so `live_undo` keeps the only backup instead of consuming it. The
+active document is read from the bound window title and is reported as
+unverified, and a modal dialog cannot be observed in `pixels_only` mode. See
 [docs/ui-control-bootstrap.md](docs/ui-control-bootstrap.md).
 
 ## Unreal

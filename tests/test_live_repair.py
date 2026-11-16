@@ -138,12 +138,17 @@ def test_invalid_menu_routes_are_refused(monkeypatch):
     assert raised.value.payload["error"] == "invalid_menu_routes"
 
 
-def test_open_recent_states_the_missing_api_precisely(gui, tmp_path):
+def test_open_recent_states_the_missing_contract_precisely(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
     payload = payload_of(live.open_recent, tree, session=gui.session)
-    assert payload["error"] == "open_recent_unsupported_by_exact_window_route"
-    assert len(payload["missing_api"]) >= 3
-    assert len(payload["evidence"]) >= 3
+    assert payload["error"] == "open_recent_unsupported_on_pixels_only_route"
+    assert payload["route"] == "owned_mcp_pixels / pixels_only"
+    assert len(payload["missing_contract"]) >= 3
+    assert len(payload["evidence"]) >= 4
+    # The earlier "file-dialog HWND" claim was wrong and is explicitly disclaimed.
+    assert any("not inherently require a different file-dialog" in item
+               for item in payload["not_claimed"])
+    assert any("transport is not the limit" in item for item in payload["evidence"])
     assert not list(tmp_path.rglob("_live_history"))
 
 
@@ -206,7 +211,10 @@ def test_undo_keeps_the_snapshot_until_the_reload_is_confirmed(gui, tmp_path):
     assert payload["history_retained"] is True
     gui.transport.fail_action_matching = None
     retried = live.undo(tree, settle_seconds=0, session=gui.session)
-    assert retried["undo_depth"] == 0
+    assert length(tree) == "2", "the retry still restores the file"
+    # A delivered-but-unverifiable reload must never consume the only backup.
+    assert retried["undo_depth"] == 1
+    assert retried["verification"]["history_retained"] is True
 
 
 def test_screenshot_failure_after_a_committed_reload_does_not_roll_back(gui, tmp_path):
