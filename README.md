@@ -92,35 +92,61 @@ caller-supplied executable or shell command. Existing output directories are
 rejected; timeout, failed exit, changed input, missing mesh, or missing explicit
 material dependency stops the batch and preserves a partial manifest.
 
-## Live co-design (Windows)
+## Live session with the Modeler (Windows)
 
-The `speedtree-live` skill lets an agent edit the tree that a user is watching
-in a running Modeler. The Modeler has no scripting API, so `live_apply` works
-through the open file: it saves the active document, copies it into
-`_live_history/<name>/`, applies `edit_graph` operations in place, reloads with
-File > Revert to saved and returns a fresh native screenshot. `live_undo`
-restores the previous copy. `live_status`, `live_save`, `live_revert` and
-`live_screenshot` are also available.
+The `speedtree-live` skill binds to the SpeedTree Modeler window the user is
+watching so an agent can observe it, capture it and deliver the configured save
+and revert commands. `live_status` reports the bound window and the active
+document, `live_screenshot` takes a fresh native capture of the exact bound
+window, and `live_save` / `live_revert` deliver their configured physical
+command to that window. `live_undo` restores the file **on disk** from the newest
+history snapshot and delivers the reload command.
 
 All observation and input go through the project's dcc-cua / DCC-MCP
 `ui-control` route: one owned, integrity-pinned runtime task bound to an exact
-PID and window handle, with a bounded action ceiling. Without that trusted
-server-owned session every entry fails closed with
-`error=no_authorized_ui_route`. `live_open` is not available on this route: the
-supported pixels-only startup configuration exposes no element targeting, so a
-recents menu entry cannot be located or activated. Open the document with
-dcc-cua / DCC-MCP `ui-control` first.
+PID and window handle, with a bounded action ceiling and real Host
+authorization. Input is bounded physical foreground input in that exact window —
+not a background or keyboard-free edit — and there is no raw PowerShell / UI
+Automation / PostMessage / PrintWindow fallback and no grant read from tool JSON
+or a caller's environment. Before the first real observation or input, report the
+actual route attestation for that task: `provider=dcc-cua`, the runtime version,
+the exact PID and the exact native HWND.
 
-Three things are deliberately not claimed. A menu command the runtime did not
-confirm as delivered (`success`/`delivery_completed`/`post_dispatch_validated`
-not all true) is refused, and `live_apply` refuses it before any history copy,
-staged edit or disk write. A delivered command still reports
-`verification.status: "unknown"`, because the runtime reports the action's
-`effect` as `unverifiable` and no same-task observation proves the Modeler
-applied it, so `live_undo` keeps the only backup instead of consuming it. The
-active document is read from the bound window title and is reported as
-unverified, and a modal dialog cannot be observed in `pixels_only` mode. See
-[docs/ui-control-bootstrap.md](docs/ui-control-bootstrap.md).
+**`live_apply` does not perform an edit on the implemented pixels-only
+adapter.** It returns `error=save_prerequisite_unverified` **before** any
+dependent business-file edit, history snapshot or reload, because that route has
+no formal process/document-bound save confirmation: a changed mtime or a changed
+content hash only shows that the disk changed, not that the bound Modeler saved
+its current GUI edits into that document. It is reported as an adapter capability
+gap (`save_effect_verifier: NOT_AVAILABLE`) and is not full real-time co-design
+acceptance; the edit/reload path runs only on a route that provides such a
+confirmation. `live_open` is likewise unsupported on this route: the supported
+pixels-only configuration exposes no element targeting, so a File > Recents
+entry cannot be located or activated. Open the document with dcc-cua / DCC-MCP
+`ui-control` first. Both of these are adapter capability gaps, not statements
+that the public protocol or another host lacks the ability.
+
+What is deliberately not claimed:
+
+- A menu command the runtime did not confirm as delivered
+  (`success`/`delivery_completed`/`post_dispatch_validated` not all true) is
+  refused. A false `delivery_completed` is not proof that nothing was sent — the
+  runtime keeps it false for a partial insertion — so compensation and backup
+  deletion are gated on proof, and every uncertain state preserves the file and
+  the only backup.
+- A delivered command still reports `verification.status: "unknown"`, because the
+  runtime reports the action's `effect` as `unverifiable` and no same-task
+  observation proves the Modeler applied it. `live_undo` therefore keeps the only
+  backup instead of consuming it.
+- The active document is read from the bound window title and is reported as
+  unverified, and a modal dialog cannot be observed in `pixels_only` mode.
+- Without the trusted server-owned session every entry fails closed with
+  `error=no_authorized_ui_route`. A read-only startup is valid: with no declared
+  menu routes and an empty action ceiling the session still constructs and
+  `live_status` / `live_screenshot` still work; route presence and action
+  permission are checked when a menu operation is used.
+
+See [docs/ui-control-bootstrap.md](docs/ui-control-bootstrap.md).
 
 ## Unreal
 
