@@ -48,6 +48,7 @@ def run_wrapper(name, session, **params):
 
 def test_post_dispatch_unknown_reload_preserves_mutation_and_backup(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "post_invalidated"}
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     # Delivery happened, so the Modeler may have executed the reload: the edit
@@ -63,6 +64,7 @@ def test_post_dispatch_unknown_reload_preserves_mutation_and_backup(gui, tmp_pat
 
 def test_transport_error_after_dispatch_is_not_a_known_failure(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "transport_error"}
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     assert length(tree) == "9", "an unclassified dispatch error must not roll back the edit"
@@ -72,25 +74,36 @@ def test_transport_error_after_dispatch_is_not_a_known_failure(gui, tmp_path):
     assert payload["gui_state"] == "unknown"
 
 
-def test_known_no_dispatch_failure_still_compensates(gui, tmp_path):
-    """Control: nothing reached the window, so compensation stays correct."""
+def test_known_no_dispatch_failure_still_compensates(monkeypatch, tmp_path):
+    """Control: an adapter-owned boundary refused before execute was entered.
+
+    No transport label and no completion flag is involved: the reload route is
+    simply absent, so ``menu()`` refuses on this side of the client and no
+    physical input can have been dispatched.
+    """
+    monkeypatch.setattr(live, "SHOT_DIR", tmp_path / "shots")
+    gui = harness.Harness(monkeypatch, menu_routes={"save": harness.SAVE_ROUTE})
     tree = write_tree(tmp_path / "tree.spm")
-    gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "not_dispatched"}
+    gui.arm_document(tree)
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "2", "a positively known non-dispatch restores the file"
+    assert length(tree) == "5", "a proved non-dispatch restores the saved file"
     assert not list(live._snapshots(tree))
     assert payload["file_restored"] is True
     assert payload["history_retained"] is False
     assert payload["dispatch"] == "not_dispatched"
+    assert payload["no_dispatch_proof"]["boundary"] == "menu_route_declaration"
+    assert payload["no_dispatch_proof"]["execute_entered"] is False
     assert payload["gui_state"] == "unknown"
+    assert gui.transport.action_keys() == ["ctrl+s"], "the reload was never attempted"
 
 
 def test_undo_keeps_the_backup_for_a_post_dispatch_unknown_reload(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "post_invalidated"}
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "2", "the disk restore is real"
+    assert length(tree) == "5", "the disk restore is real"
     assert len(list(live._snapshots(tree))) == 1, "the backup must not be discarded"
     assert payload["history_retained"] is True
     assert payload["gui_state"] == "unknown"
@@ -101,6 +114,7 @@ def test_undo_keeps_the_backup_for_a_post_dispatch_unknown_reload(gui, tmp_path)
 
 def test_apply_wrapper_message_does_not_claim_the_effect(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     result = run_wrapper(
         "live_apply.py", gui.session, path=str(tree), operations=SET_LENGTH, settle_seconds=0
     )
@@ -112,6 +126,7 @@ def test_apply_wrapper_message_does_not_claim_the_effect(gui, tmp_path):
 
 def test_undo_wrapper_message_reports_the_retained_backup(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     result = run_wrapper("live_undo.py", gui.session, path=str(tree), settle_seconds=0)
     message = result["message"].lower()

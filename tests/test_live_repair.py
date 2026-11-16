@@ -193,19 +193,28 @@ def test_a_failed_connection_cleanup_is_retained(gui):
 
 
 def test_apply_known_non_dispatch_reload_failure_compensates_and_reports_truthfully(gui, tmp_path):
-    """Control: only a positively known non-dispatch may roll the edit back."""
+    """Control: only a positively known non-dispatch may roll the edit back.
+
+    The proof here is the runtime's own action-stage evidence -- pre-dispatch
+    phase, no action attempted, no input sent, completion known, effect not
+    unknown -- not a bare false completion flag.
+    """
     tree = write_tree(tmp_path / "tree.spm")
-    gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "not_dispatched"}
+    gui.arm_document(tree)
+    gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "pre_dispatch_refusal"}
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "2", "the user's saved file must be restored"
+    assert length(tree) == "5", "the user's saved file must be restored"
     assert not list(live._snapshots(tree))
     assert payload["phase"] == "reload"
     assert payload["dispatch"] == "not_dispatched"
+    assert payload["native_error"]["native_evidence"]["details"]["phase"] == "pre_dispatch"
+    assert payload["native_error"]["native_evidence"]["details"]["input_sent"] == "not_sent"
+    assert payload["native_error"]["native_evidence"]["details"]["completion"] == "known"
     assert payload["file_restored"] is True
     assert payload["history_retained"] is False
     assert payload["history_snapshot"] is None
     assert payload["gui_state"] == "unknown"
-    assert payload["error"] == "reload_not_confirmed"
+    assert payload["error"] == "menu_action_rejected"
     assert payload["retry"]
     json.dumps(payload)
 
@@ -213,6 +222,7 @@ def test_apply_known_non_dispatch_reload_failure_compensates_and_reports_truthfu
 def test_apply_unclassified_dispatch_error_preserves_mutation_and_backup(gui, tmp_path):
     """A dispatch error the runtime cannot classify is not a known failure."""
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     gui.transport.fail_action_matching = {"keys": "ctrl+r"}
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     assert length(tree) == "9", "the edit stays on disk; the reload may have run"
@@ -230,9 +240,24 @@ def test_apply_unclassified_dispatch_error_preserves_mutation_and_backup(gui, tm
     json.dumps(payload)
 
 
+def test_apply_partial_insertion_preserves_mutation_and_backup(gui, tmp_path):
+    """A partial insertion reports false flags while input already reached it."""
+    tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
+    gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "partial"}
+    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    assert length(tree) == "9", "input was inserted, so the edit must not be rolled back"
+    assert len(list(live._snapshots(tree))) == 1
+    assert payload["error"] == "reload_effect_unknown"
+    assert payload["dispatch"] == "partial"
+    assert payload["file_restored"] is False
+    assert payload["history_retained"] is True
+
+
 def test_apply_compensation_failure_keeps_the_only_backup(gui, tmp_path, monkeypatch):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "not_dispatched"}
+    gui.arm_document(tree)
+    gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "pre_dispatch_refusal"}
     monkeypatch.setattr(
         live, "_replace", lambda src, snap: (_ for _ in ()).throw(OSError("disk full"))
     )
@@ -247,15 +272,16 @@ def test_apply_compensation_failure_keeps_the_only_backup(gui, tmp_path, monkeyp
 
 def test_undo_keeps_the_snapshot_until_the_reload_is_confirmed(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     gui.transport.fail_action_matching = {"keys": "ctrl+r"}
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "2"
+    assert length(tree) == "5"
     assert len(list(live._snapshots(tree))) == 1, "the retryable snapshot must survive"
     assert payload["history_retained"] is True
     gui.transport.fail_action_matching = None
     retried = live.undo(tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "2", "the retry still restores the file"
+    assert length(tree) == "5", "the retry still restores the file"
     # A delivered-but-unverifiable reload must never consume the only backup.
     assert retried["undo_depth"] == 1
     assert retried["verification"]["history_retained"] is True
@@ -263,6 +289,7 @@ def test_undo_keeps_the_snapshot_until_the_reload_is_confirmed(gui, tmp_path):
 
 def test_screenshot_failure_after_a_committed_reload_does_not_roll_back(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     gui.transport.fail_snapshot_from = 3  # the post-commit observation
     result = live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     assert length(tree) == "9", "a committed edit must not be rolled back"
