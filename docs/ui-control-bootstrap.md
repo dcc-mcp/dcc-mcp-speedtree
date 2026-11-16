@@ -144,31 +144,55 @@ then fails with `error=unauthorized_action`.
    screenshot directory change behind.
 
 **How the write entries work.** `live_save`, `live_revert`, `live_apply` and
-`live_undo` take a fresh native observation, deliver the operator-declared menu
-action as authorized physical input and then observe again. Three properties
-are reported instead of being asserted away:
+`live_undo` validate an explicit `process_id` against the bound window first,
+take a fresh native observation, deliver the operator-declared menu action as
+authorized physical input and then observe again. Delivery and effect are
+reported separately, because they are different facts:
 
-- the runtime reports the action's `effect` as `unverifiable`, and the adapter
-  propagates it together with `verification_required`; a rejected delivery
-  raises `error=menu_action_rejected` rather than being reported as done;
-- the active document is parsed from the bound window title and is always
+- **Delivery** is a data check, not an exception check. Core's client returns a
+  boolean `structuredContent` result and raises nothing for a refused action, so
+  `success` / `delivery_completed` / `post_dispatch_validated` are each required
+  to be exactly `True`. Anything else raises `error=save_not_confirmed`,
+  `revert_not_confirmed` or `reload_not_confirmed`, and `live_apply` checks the
+  save **before** creating history, staging an edit or touching the document. A
+  transport-level rejection still surfaces as `error=menu_action_rejected`.
+- **Effect** stays unverified. The runtime reports every delivered physical
+  action's `effect` as `unverifiable`, and the only same-task observations
+  available are native pixels and window state — neither proves the Modeler
+  applied a menu command. Results therefore carry
+  `verification.status: "unknown"` with `established_by: null`. Taking another
+  screenshot is observation, not effect verification.
+- **Backups are not spent on an unverified reload.** `live_undo` restores the
+  file on disk and delivers the reload, but keeps the only history snapshot and
+  reports `undo_depth` accordingly, because deleting it would discard the
+  user's undo for a reload that may never have happened. Nothing sets
+  `effect="verified"` and no self-reported flag is added.
+- The active document is parsed from the bound window title and is always
   returned with `active_document_verified: False`; an unparseable title is
-  refused with `error=active_document_unverifiable`;
-- a modal dialog cannot be observed (`pixels_only` reports
+  refused with `error=active_document_unverifiable`.
+- A modal dialog cannot be observed (`pixels_only` reports
   `accessibility_available: False`), so `status()` reports
   `capabilities.modal_dialog: False` instead of claiming the window is clear.
 
 `live_open` is **not** available on this route and refuses with
-`error=open_recent_unsupported_by_exact_window_route`, naming the missing API:
-a public typed DCC document-open action, or a public way to retarget the owned
-task to a child dialog HWND, plus semantic targeting that `pixels_only` does not
-expose.
+`error=open_recent_unsupported_on_pixels_only_route`. The limitation is the
+supported startup configuration, not a file-dialog HWND: File > Recents is a
+menu of the same bound window, and `OwnedCuaMcpTransport.rpc` / `.tool` is a
+generic public-protocol transport, so neither is the blocker. What is missing is
+element targeting — `UiControlRuntimeOptions` accepts only `owned_mcp_pixels`
+with `pixels_only`, `PixelsMcpHostClient` is the only public host client, and it
+rejects `element_token` / `element_index`, refuses a semantic observation
+(`node_count` 0) and leaves `invoke_menu` unsupported. The needed contract is a
+public semantic-capable host client (or another `observation_mode` /
+`transport` value), element targeting in the adapter client, or a typed DCC
+document-open action.
 
 `apply` / `undo` keep the on-disk guarantees from the transaction repair: one
 atomic rename per commit, a private staging directory per call, a structured
-receipt with `file_restored` / `history_retained` / `gui_state` on a failed
-reload, history consumed only after the reload is confirmed, and a screenshot
-failure reported as `screenshot_error` without rolling the commit back.
+receipt with `file_restored` / `history_retained` / `gui_state` when a reload is
+not delivered (including disk compensation and keeping the sole backup when
+compensation itself fails), and a screenshot failure reported as
+`screenshot_error` without rolling the commit back.
 
 ## 4. Precise remaining Core extension point
 
