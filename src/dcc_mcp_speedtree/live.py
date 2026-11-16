@@ -52,17 +52,29 @@ flag, grant or environment switch is introduced.
 
 Compensation is gated on what is positively KNOWN, not on the absence of
 success. Every delivery carries a ``dispatch`` classification --
-``delivered``, ``not_dispatched``, ``delivered_unverified`` or
-``unknown_dispatch``. ``apply`` rolls the edit back only for
-``not_dispatched``, the one state that proves nothing reached the window; a
-dispatched-but-unvalidated reload, a timeout or an unclassified transport error
-keeps BOTH the edit on disk and the only history snapshot and is reported as
+``delivered``, ``not_dispatched``, ``delivered_unverified``, ``partial`` or
+``unknown_dispatch``. A false ``delivery_completed`` is NOT proof that nothing
+was sent: the runtime's physical input fence accumulates requested and inserted
+events and keeps that flag false until every dispatch, cleanup and post-check
+passes, so a partial insertion reports false while real input already reached
+the window. ``not_dispatched`` therefore requires affirmative evidence -- an
+adapter-owned boundary that refused before ``execute`` was entered, or the
+runtime's own action-stage fields (a pre-dispatch phase, no action attempted, or
+no input sent, with completion known and the effect not unknown). ``apply``
+rolls the edit back only for that state; a delivered-but-unvalidated reload, a
+partial insertion, a timeout or an unclassified transport error keeps BOTH the
+edit on disk and the only history snapshot and is reported as
 ``reload_effect_unknown``, because the Modeler may already have executed it and
 a blind rollback would destroy the user's own edit and only recovery copy.
-Classification never comes from a self-reported flag: it is derived from Core's
-structured ``delivery_completed`` / ``post_dispatch_validated`` result and, for
-an exception, from the preserved structured native evidence, which is why
-``menu()`` propagates ``native_error`` instead of flattening it into a message.
+Classification never comes from a self-reported flag or a transport label.
+
+``apply`` additionally refuses its dependent destructive phase when the SAVE
+PREREQUISITE is not established. Delivery of the save is not enough, because the
+save effect is unverifiable on this route; the file itself is observed either
+side of the delivered save, and an unchanged file means no evidence, so the
+phase stops with ``disk_mutation`` and ``history_mutation`` false and the gap is
+named as an adapter capability gap (``save_effect_verifier: NOT_AVAILABLE``) --
+not as a statement about the public protocol or another host.
 
 These are limited guarantees: after a reload that was not delivered the Modeler
 GUI state is UNKNOWN; ``undo`` restores the file on disk and delivers the
@@ -74,6 +86,7 @@ No controlled fake counts as native GUI acceptance.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import tempfile
@@ -185,10 +198,13 @@ def _delivery_failure(phase, result):
 def _dispatch_known_failed(exc):
     """Whether a failure is positively known never to have reached the window.
 
-    Only a structured ``delivery_completed: false`` result qualifies. An
-    exception -- timeout, transport error, rejected call -- never does: it
-    cannot prove the command was not executed, so it must not license a
-    compensating restore.
+    Only the ``not_dispatched`` classification qualifies, and that
+    classification itself requires affirmative proof: either an adapter-owned
+    boundary that refused before ``execute`` was entered, or the runtime's own
+    action-stage evidence (pre-dispatch phase, no action attempted, or no input
+    sent, with completion known and the effect not unknown). A false
+    ``delivery_completed`` is NOT such proof -- the runtime keeps it false for a
+    partial insertion as well -- so it never licenses a compensating restore.
     """
     payload = getattr(exc, "payload", None)
     if not isinstance(payload, dict):
@@ -196,13 +212,83 @@ def _dispatch_known_failed(exc):
     return payload.get("dispatch") == "not_dispatched"
 
 
+def _file_state(path):
+    """Same-task observation of the file on disk, content and time."""
+    st = path.stat()
+    return {
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "size": st.st_size,
+        "mtime_ns": st.st_mtime_ns,
+    }
+
+
+def save_postcondition(before, after):
+    """Whether the save demonstrably put the Modeler's document on disk.
+
+    The only same-task observation available on this adapter's implemented
+    pixels-only route is the FILE ITSELF: if the bytes changed after the save
+    was delivered, the Modeler flushed its edits into it, and the disk state is
+    known to match the document at save time. If the bytes did not change, no
+    evidence exists -- the Modeler may have had nothing pending, or the save may
+    never have taken effect -- so the precondition for the dependent destructive
+    phase is NOT established. This reads a file; it is not a grant, not a
+    self-reported flag and not a native read.
+    """
+    changed = before != after
+    return {
+        "established": changed,
+        "method": "same_task_file_observation",
+        "evidence": {"before": dict(before), "after": dict(after)},
+        "reason": (
+            "The saved bytes changed on disk, so the Modeler flushed its pending "
+            "edits into this file."
+            if changed
+            else "The saved bytes did not change on disk: that is consistent both with "
+            "no pending edits and with a save that never took effect, so the "
+            "prerequisite is unproven."
+        ),
+    }
+
+
+def _save_prerequisite_unverified(saved, postcondition):
+    """Refuse the dependent destructive phase BEFORE any disk or history write."""
+    return LiveError(
+        {
+            "error": "save_prerequisite_unverified",
+            "phase": "save_prerequisite",
+            "dispatch": saved.get("dispatch"),
+            "disk_mutation": False,
+            "history_mutation": False,
+            "gui_state": "unknown",
+            "save_postcondition": postcondition,
+            "adapter_capability": {
+                "save_effect_verifier": "NOT_AVAILABLE",
+                "route": "owned_mcp_pixels / pixels_only",
+                "scope": (
+                    "This adapter's implemented route has no supported same-task "
+                    "verifier for the save effect; a file observation is used when it "
+                    "is informative and the phase is otherwise refused. This is an "
+                    "adapter capability gap, not a statement about the public "
+                    "DCC-CUA protocol or another host."
+                ),
+            },
+            "message": (
+                "The save was delivered, but no supported same-task observation proves "
+                "the Modeler wrote its pending edits to disk, so the dependent file "
+                "edit is refused before any disk or history mutation. Save the "
+                "document in the Modeler so the file changes, then retry."
+            ),
+        }
+    )
+
+
 def _unknown_reload_error(exc, history_snapshot, staged_retained=None):
     """Preserve the mutation and the backup for a reload that may have happened.
 
-    A dispatched-but-unvalidated or unclassified dispatch is NOT a known
-    failure: the Modeler may already have executed the reload. Rolling the file
-    back would undo an edit the user may be looking at, and deleting the only
-    snapshot would discard recoverability, so both are preserved and the
+    A dispatched-but-unvalidated, partial or unclassified dispatch is NOT a
+    known failure: the Modeler may already have executed the reload. Rolling the
+    file back would undo an edit the user may be looking at, and deleting the
+    only snapshot would discard recoverability, so both are preserved and the
     uncertainty is reported instead of being resolved by assumption.
     """
     payload = getattr(exc, "payload", None) if isinstance(exc, LiveError) else None
@@ -383,6 +469,8 @@ def _transaction_error(
     }
     if isinstance(exc, LiveError) and "native_error" in exc.payload:
         payload["native_error"] = exc.payload["native_error"]
+    if isinstance(exc, LiveError) and "no_dispatch_proof" in exc.payload:
+        payload["no_dispatch_proof"] = exc.payload["no_dispatch_proof"]
     if compensation_error is not None:
         payload["compensation_error"] = _error_detail(compensation_error)
     if staged_retained:
@@ -513,13 +601,25 @@ def save(process_id=None, *, session=None):
     """Ask the Modeler to save the active document (File > Save).
 
     A delivery the runtime did not confirm is a failure: it is refused instead
-    of being reported as a save.
+    of being reported as a save. A confirmed delivery still does NOT report the
+    document as saved: the effect is unverifiable and this entry has no path to
+    observe, so the missing verifier is named instead of being filled in.
     """
     bounded = _require_session(session)
     bounded.require_target(process_id)  # before any native read or output work
     result = bounded.menu("save")
     if not _delivery_confirmed(result):
         raise _delivery_failure("save", result)
+    result["effect_verifier"] = {
+        "status": "NOT_AVAILABLE",
+        "route": "owned_mcp_pixels / pixels_only",
+        "note": (
+            "This adapter's implemented route has no supported same-task verifier for "
+            "the save effect. The delivery is reported and the effect is not claimed; "
+            "this is an adapter capability gap, not a statement about the public "
+            "DCC-CUA protocol or another host."
+        ),
+    }
     return result
 
 
@@ -568,22 +668,42 @@ def _reload_and_observe(bounded, settle_seconds):
 def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None):
     """Save the open tree, record a history copy, apply operations and reload it.
 
-    The edit is committed to disk by one atomic rename, then confirmed by the
-    Modeler reload. A reload failure restores the user's saved file from the
-    snapshot and reports a structured retryable receipt; the snapshot is kept as
-    the only backup when that restoration itself fails. A screenshot failure
-    AFTER a successful reload is only observation loss: the transaction stays
-    committed and ``screenshot_error`` is returned instead. The staged edit is
-    owned by this call alone, so earlier recovery material is never touched.
+    The dependent edit is gated on a SAVE PREREQUISITE that is actually
+    established, not merely delivered: the runtime reports the save effect as
+    unverifiable, so ``apply`` observes the file itself either side of the
+    delivered save and refuses -- with the disk and the history untouched --
+    when that observation does not show the Modeler writing its pending edits to
+    disk. A delivery that was never confirmed is refused earlier still.
+
+    The edit is then committed to disk by one atomic rename, then reloaded by the
+    Modeler. A reload whose dispatch is uncertain leaves the edit and the only
+    backup in place; only a reload positively known never to have been dispatched
+    restores the user's saved file from the snapshot and reports a structured
+    retryable receipt. A screenshot failure AFTER a delivered reload is only
+    observation loss: the transaction stays committed and ``screenshot_error`` is
+    returned instead. The staged edit is owned by this call alone, so earlier
+    recovery material is never touched.
     """
     bounded = _require_session(session)
     bounded.require_target(process_id)  # before any native read, path, history or output work
     src = Path(path).resolve(strict=True)
     pid = _require_active(bounded, src)
+    # The save prerequisite is the whole reason the dependent edit is safe: it is
+    # what keeps the user's own unsaved GUI edits from being overwritten by this
+    # call. Delivery alone does not establish it, because the runtime reports the
+    # save EFFECT as unverifiable, so a same-task observation of the file is
+    # taken either side of the delivered save.
+    before = _file_state(src)
     saved = bounded.menu("save")  # keeps the user's own GUI edits in the file we edit
     if not _delivery_confirmed(saved):
         # Nothing has been written yet: refuse before any history or staging.
         raise _delivery_failure("save", saved)
+    after = _file_state(src)
+    postcondition = save_postcondition(before, after)
+    if not postcondition["established"]:
+        # Refuse the dependent destructive phase with the disk and the history
+        # untouched, and say plainly that this is an adapter capability gap.
+        raise _save_prerequisite_unverified(saved, postcondition)
     history_dir = _history(src)
     history_dir.mkdir(parents=True, exist_ok=True)
     snap = history_dir / f"{datetime.now():%Y%m%d_%H%M%S_%f}{src.suffix}"
@@ -652,6 +772,7 @@ def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None
         "path": str(src),
         "process_id": pid,
         "operations": edited["operations"],
+        "save_postcondition": postcondition,
         "history_snapshot": str(snap),
         "undo_depth": len(_snapshots(src)),
         "screenshot": observed,
