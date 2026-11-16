@@ -1,17 +1,53 @@
 """Live design loop with a SpeedTree Modeler window the user is watching (Windows only).
 
 The Modeler has no scripting API, so changes go through the file on disk: save the
-open document, keep a history copy, rewrite the file with ``edit_graph`` and make the
-Modeler reload it with File > Revert to saved. ``live.ps1`` drives the menus through
-UI Automation in the background; it never moves the user's mouse or keyboard.
+open document, keep a history copy, rewrite the file with ``edit_graph`` and make
+the Modeler reload it with File > Revert to saved.
+
+UI observation and input go through the project's dcc-cua / DCC-MCP ui-control
+route only. The raw PowerShell / UI Automation / posted-keys / PrintWindow
+bridge that used to drive the Modeler (``live.ps1``) has been REMOVED from the
+source tree and from the package: it enumerated windows itself, posted messages
+straight into the target and captured it with PrintWindow, bypassing every
+authorization boundary in the project.
+
+The replacement is Core 0.20.44's public trusted runtime path:
+``UiControlRuntimeOptions`` carries one integrity-pinned dcc-cua binary, one
+exact PID/HWND and a bounded action ceiling; ``PixelsMcpHostClient`` owns the
+single stdio task and the runtime-issued ``task_id``; ``HostExecutionBridge``
+carries the reviewed in-process execution route. The adapter server owns that
+client and injects one bounded typed view (``BoundedLiveSession``) into the
+seven ``speedtree-live`` entries. Menu operations are delivered as authorized
+physical input against a FRESH native observation, and Core reports their
+``effect`` as ``unverifiable``, which is propagated instead of being claimed as
+success. See ``trusted_session.py`` and ``docs/ui-control-bootstrap.md``.
+
+Every entry requires that server-owned session. Without it they fail closed
+with ``error=no_authorized_ui_route`` before any SPM write, history-snapshot
+deletion, physical action or output directory creation. Nothing is read from
+tool JSON, ``os.environ`` or a business caller's ad-hoc environment; the adapter
+never mints a grant, never copies an opaque ID between connections and never
+trusts a self-reported authorization marker.
+
+``apply`` / ``undo`` separate the on-disk atomic mutation from the Modeler
+reload and the later screenshot observation. Each file swap stages its content
+in a fresh private directory beside the target, so older recovery material is
+never overwritten or removed, and a cleanup residue is reported by its real path
+instead of being mistaken for undo history. A reload failure restores the user's
+saved file and returns a structured retryable receipt; ``undo`` consumes its
+history only after the reload is confirmed; a screenshot failure after a
+successful reload is observation loss only, never a rollback.
+
+These are limited guarantees: after a failed reload the Modeler GUI state is
+UNKNOWN, the active document is read from the bound window title and is NOT
+verified, and a modal dialog cannot be observed in ``pixels_only`` mode. No
+controlled fake counts as native GUI acceptance.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
-import subprocess
 import tempfile
 import time
 from datetime import datetime
@@ -19,10 +55,19 @@ from pathlib import Path
 
 from .node_tools import edit_graph
 
-SCRIPT = Path(__file__).with_name("live.ps1")
 HISTORY_DIR = "_live_history"
 SHOT_DIR = Path(tempfile.gettempdir()) / "speedtree-live"
-_NO_WINDOW = 0x08000000
+
+# Only the trusted in-process execution route may supply this parameter. Core's
+# HostExecutionBridge already strips ``trusted_adapter_scope`` /
+# ``trusted_ui_control_runtime``; TrustedLiveExecutionBridge strips EVERY
+# ``trusted_*`` key and then injects the server-owned bounded session here.
+TRUSTED_SESSION_PARAM = "trusted_speedtree_live_session"
+
+# Window-title separators the Modeler uses before its application suffix.
+# Parsing is best-effort and always reported as unverified: pixels_only exposes
+# no accessibility tree and no document path.
+_TITLE_SEPARATORS = (" - ", " – ", " — ")
 
 
 class LiveError(RuntimeError):
@@ -31,37 +76,27 @@ class LiveError(RuntimeError):
         super().__init__(self.payload.get("message", "SpeedTree live command failed"))
 
 
-def _run(command, timeout=300, **params):
-    args = [
-        "powershell",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str(SCRIPT),
-        "-Command",
-        command,
-    ]
-    for key, value in params.items():
-        if value not in (None, "", 0):
-            args += [f"-{key}", str(value)]
-    try:
-        proc = subprocess.run(
-            args, capture_output=True, text=True, timeout=timeout, creationflags=_NO_WINDOW
-        )
-    except subprocess.TimeoutExpired:
+def _require_session(session):
+    """Accept ONLY the server's concrete bounded session, never a caller object.
+
+    Imported lazily because ``trusted_session`` imports this module. An exact
+    type check also rejects a foreign object that spoofs ``__class__`` to
+    imitate the concrete class; a self-reported marker is never trusted.
+    """
+    from .trusted_session import BoundedLiveSession
+
+    if type(session) is not BoundedLiveSession:
         raise LiveError(
-            {"error": "timeout", "message": f"live.ps1 {command} exceeded {timeout}s"}
-        ) from None
-    lines = [ln for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
-    if not lines:
-        raise LiveError(
-            {"error": "no_output", "message": (proc.stderr or proc.stdout).strip()[-2000:]}
+            {
+                "error": "no_authorized_ui_route",
+                "message": (
+                    "No trusted server-owned dcc-cua/ui-control session is available "
+                    "to this live skill entry; live Modeler operations are disabled "
+                    "(fail-closed)."
+                ),
+            }
         )
-    data = json.loads(lines[-1])
-    if not data.get("ok"):
-        raise LiveError(data)
-    return data
+    return session
 
 
 def _history(src: Path) -> Path:
@@ -73,114 +108,369 @@ def _snapshots(src: Path):
     return sorted(folder.glob(f"*{src.suffix}")) if folder.is_dir() else []
 
 
+def _owned_stage(src: Path, kind: str):
+    """Reserve a private staging directory and a stage path that does not exist.
+
+    ``mkdtemp`` creates a unique directory beside ``src``, so this call can
+    never overwrite or delete recovery material left by an earlier run. The
+    stage path itself must NOT exist: ``graph.save`` opens its output with
+    ``"xb"``. Staying beside ``src`` keeps the final ``os.replace`` atomic on
+    the same filesystem.
+    """
+    folder = Path(tempfile.mkdtemp(prefix=f".live_{kind}_{src.stem}_", dir=src.parent))
+    return folder, folder / f"stage{src.suffix}"
+
+
 def _replace(src: Path, content_from: Path):
-    # Copy beside the target first so the final swap is a single atomic rename.
-    staged = src.with_name(f".live_restore_{src.name}")
-    shutil.copy2(content_from, staged)
-    os.replace(staged, src)
+    """Atomically restore ``src`` from ``content_from`` using only our own stage."""
+    folder, staged = _owned_stage(src, "restore")
+    try:
+        shutil.copy2(content_from, staged)
+        os.replace(staged, src)
+    except Exception:
+        _cleanup_staged(staged, folder)
+        raise
+    _cleanup_staged(staged, folder)
 
 
-def _require_active(src: Path, process_id):
-    instances = _run("status", ProcessId=process_id)["instances"]
+def _cleanup_staged(*paths):
+    """Best-effort removal of paths owned by this call; report actual residue.
+
+    Returns ``(retained, first_error)`` where ``retained`` lists the real paths
+    still present after the attempt. Callers MUST derive each named recovery
+    field from its own path, never from ``any()`` across unrelated resources.
+    Directories are removed with ``rmdir`` only (empty-only), so an unknown file
+    is retained rather than recursively deleted. Cleanup errors never mask the
+    caller's original failure.
+    """
+    error = None
+    retained = []
+    for path in paths:
+        try:
+            if path.is_dir():
+                path.rmdir()
+            else:
+                path.unlink(missing_ok=True)
+        except OSError as exc:
+            error = error or exc
+        if path.exists():
+            retained.append(str(path))
+    return retained, error
+
+
+def _error_detail(exc):
+    """Flatten an exception into one JSON-safe, human-readable string."""
+    if isinstance(exc, LiveError):
+        payload = exc.payload
+        return f"{payload.get('error', 'live_failed')}: {payload.get('message', str(exc))}"
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _transaction_error(exc, *, phase, file_restored, history_snapshot,
+                       history_retained, compensation_error=None, retry=None,
+                       staged_retained=None):
+    """Build a truthful structured failure for a file transaction.
+
+    The original failure is preserved in ``original_error`` and chained as the
+    cause; ``error`` keeps the original ``LiveError`` code when there is one.
+    Recovery is reported exactly as it happened: ``history_*`` describes only
+    the history snapshot, while ``staged_retained`` lists owned stage residue by
+    real path and is never counted as undo history. ``gui_state`` is always
+    ``unknown``: restoring the disk file is a limited local data guarantee, not
+    proof of what the Modeler window currently shows.
+    """
+    code = exc.payload.get("error") if isinstance(exc, LiveError) else None
+    state = "complete" if file_restored else "incomplete"
+    payload = {
+        "error": code or f"{phase}_failed",
+        "message": (
+            f"SpeedTree live {phase} failed ({_error_detail(exc)}). "
+            f"Local file recovery is {state}; the Modeler GUI state is unknown. "
+            "Inspect the open document before any further write."
+        ),
+        "phase": phase,
+        "original_error": _error_detail(exc),
+        "file_restored": file_restored,
+        "history_retained": history_retained,
+        "history_snapshot": str(history_snapshot) if history_retained else None,
+        "gui_state": "unknown",
+    }
+    if compensation_error is not None:
+        payload["compensation_error"] = _error_detail(compensation_error)
+    if staged_retained:
+        payload["staged_retained"] = list(staged_retained)
+    if retry:
+        payload["retry"] = retry
+    return LiveError(payload)
+
+
+def _document_from_title(title):
+    """Best-effort document name from the bound window title; never verified."""
+    if not isinstance(title, str):
+        return None
+    head = title
+    for separator in _TITLE_SEPARATORS:
+        head = head.split(separator)[0]
+    head = head.strip().strip("*").strip()
+    return head or None
+
+
+def _require_active(bounded, src: Path, process_id):
+    """Confirm the bound window is showing ``src`` before any write.
+
+    The document name comes from the bound window title only. Pixels-only
+    exposes no accessibility tree and no document path, so it is reported as
+    unverified and an unparseable title is refused instead of assumed.
+    """
+    state = bounded.status()
+    instances = state.get("instances") or []
     if not instances:
-        raise LiveError({"error": "not_running", "message": "No SpeedTree Modeler window found"})
-    if len(instances) > 1 and not process_id:
+        raise LiveError({"error": "not_running", "message": "No bound SpeedTree Modeler window found"})
+    target = instances[0]
+    active = _document_from_title(target.get("window_title"))
+    if not active:
         raise LiveError(
             {
-                "error": "ambiguous_instance",
-                "message": "Several Modeler windows are open; pass process_id",
-                "process_ids": [i["process_id"] for i in instances],
+                "error": "active_document_unverifiable",
+                "window_title": target.get("window_title"),
+                "message": (
+                    "The bound window title does not name an open document; pixels_only "
+                    "exposes no document path. Confirm the Modeler is showing "
+                    f"'{src.name}' before writing."
+                ),
             }
         )
-    inst = instances[0]
-    if inst.get("modal_dialog"):
-        raise LiveError(
-            {
-                "error": "modal_dialog_open",
-                "message": f"Modeler shows dialog '{inst['modal_dialog']}'; close it first",
-            }
-        )
-    if (inst.get("active_document") or "").lower() != src.name.lower():
+    if active.lower() != src.name.lower():
         raise LiveError(
             {
                 "error": "not_active",
-                "active_document": inst.get("active_document"),
-                "message": f"Modeler shows '{inst.get('active_document')}', not '{src.name}'; use live_open first",
+                "active_document": active,
+                "active_document_verified": False,
+                "message": f"Modeler shows '{active}', not '{src.name}'; use live_open first",
             }
         )
-    return inst["process_id"]
+    window = state.get("window_state") or {}
+    if window.get("minimized") or not window.get("visible"):
+        raise LiveError(
+            {
+                "error": "window_not_visible",
+                "message": "The bound Modeler window is minimized or hidden; restore it first.",
+            }
+        )
+    return target["process_id"]
 
 
-def status(process_id=None):
-    return _run("status", ProcessId=process_id)
+def status(process_id=None, *, session=None):
+    """Read the exact bound window state through the server-owned typed client.
+
+    An explicit ``process_id`` is validated against the bound window BEFORE any
+    native read; ``None`` means "use the exact bound window".
+    """
+    bounded = _require_session(session)
+    bounded.require_target(process_id)
+    return bounded.status()
 
 
-def screenshot(process_id=None, path=None, scale=0.6):
-    if not path:
-        SHOT_DIR.mkdir(parents=True, exist_ok=True)
+def screenshot(process_id=None, path=None, scale=0.6, *, session=None):
+    """Capture a fresh native PNG through the server-owned typed client.
+
+    ``scale`` is retained for input compatibility but is NOT applied: the
+    pixels-only typed client returns native-resolution pixels and no silent
+    resampling is performed.
+    """
+    bounded = _require_session(session)  # refuse BEFORE any path or directory work
+    bounded.require_target(process_id)  # refuse BEFORE native capture and output paths
+    auto_path = not path
+    if auto_path:
         path = SHOT_DIR / f"modeler_{datetime.now():%Y%m%d_%H%M%S_%f}.png"
-    return _run("screenshot", ProcessId=process_id, Path=path, Scale=scale)
+    result = bounded.capture()
+    # Create output directories only AFTER the typed capture proof succeeded.
+    if auto_path:
+        SHOT_DIR.mkdir(parents=True, exist_ok=True)
+    else:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_bytes(result["image_bytes"])
+    return {
+        "path": str(path),
+        "provider": result["provider"],
+        "runtime_version": result["runtime_version"],
+        "observation_id": result["observation_id"],
+        "target": result["target"],
+        "scale_requested": scale,
+        "scale_applied": False,
+    }
 
 
-def open_recent(path, process_id=None):
-    return _run("recent", ProcessId=process_id, Path=Path(path).resolve(strict=True))
+def open_recent(path, process_id=None, *, session=None):
+    """Refuse precisely: not implementable on the exact-window pixels-only route.
+
+    Opening a file needs a native file dialog or a typed DCC menu action, and
+    neither is public API here: the owned task is bound to ONE exact PID/HWND
+    (``UiControlRuntimeOptions`` plus ``PixelsMcpHostClient._check_target``
+    rejects any other window) and ``pixels_only`` exposes no accessibility tree
+    to read or target a menu. See ``BoundedLiveSession.unsupported_open_recent``.
+    """
+    bounded = _require_session(session)
+    bounded.require_target(process_id)
+    raise bounded.unsupported_open_recent(Path(path).resolve(strict=True))
 
 
-def save(process_id=None):
-    return _run("menu", ProcessId=process_id, Menu="File", Item="Save")
+def save(process_id=None, *, session=None):
+    """Ask the Modeler to save the active document (File > Save)."""
+    bounded = _require_session(session)
+    bounded.require_target(process_id)
+    return bounded.menu("save")
 
 
-def revert(process_id=None, settle_seconds=3.0, shot=True):
-    result = _run("revert", ProcessId=process_id)
+def revert(process_id=None, settle_seconds=3.0, shot=True, *, session=None):
+    """Reload the saved document (File > Revert to saved)."""
+    bounded = _require_session(session)
+    bounded.require_target(process_id)
+    result = bounded.menu("revert")
     if shot:
         time.sleep(settle_seconds)
-        result["screenshot"] = screenshot(result["process_id"])["path"]
+        result["screenshot"] = screenshot(result["process_id"], session=bounded)["path"]
     return result
 
 
-def apply(path, operations, process_id=None, settle_seconds=3.0):
-    """Save the open tree, record a history copy, apply operations and reload it."""
+def _reload_and_observe(bounded, settle_seconds):
+    """Reload the document (the commit boundary), then observe it separately.
+
+    A screenshot failure is an observation failure, NOT an uncommitted
+    transaction: it is returned as ``(None, detail)`` instead of being raised,
+    so callers never redo or wrongly roll back a committed mutation.
+    """
+    reload = bounded.menu("revert")
+    try:
+        time.sleep(settle_seconds)
+        return reload, screenshot(bounded.bound_process_id, session=bounded)["path"], None
+    except Exception as exc:
+        return reload, None, _error_detail(exc)
+
+
+def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None):
+    """Save the open tree, record a history copy, apply operations and reload it.
+
+    The edit is committed to disk by one atomic rename, then confirmed by the
+    Modeler reload. A reload failure restores the user's saved file from the
+    snapshot and reports a structured retryable receipt; the snapshot is kept as
+    the only backup when that restoration itself fails. A screenshot failure
+    AFTER a successful reload is only observation loss: the transaction stays
+    committed and ``screenshot_error`` is returned instead. The staged edit is
+    owned by this call alone, so earlier recovery material is never touched.
+    """
+    bounded = _require_session(session)
     src = Path(path).resolve(strict=True)
-    pid = _require_active(src, process_id)
-    save(pid)  # keeps the user's own GUI edits in the file we edit
-    folder = _history(src)
-    folder.mkdir(parents=True, exist_ok=True)
-    snap = folder / f"{datetime.now():%Y%m%d_%H%M%S_%f}{src.suffix}"
+    pid = _require_active(bounded, src, process_id)
+    bounded.menu("save")  # keeps the user's own GUI edits in the file we edit
+    history_dir = _history(src)
+    history_dir.mkdir(parents=True, exist_ok=True)
+    snap = history_dir / f"{datetime.now():%Y%m%d_%H%M%S_%f}{src.suffix}"
     shutil.copy2(src, snap)
-    tmp = src.with_name(f".live_edit_{src.name}")
-    tmp.unlink(missing_ok=True)
+    stage_dir, tmp = _owned_stage(src, "edit")
     try:
         edited = edit_graph(str(src), str(tmp), operations)
     except Exception:
-        tmp.unlink(missing_ok=True)
-        snap.unlink(missing_ok=True)
+        # No mutation happened: propagate the original graph error verbatim.
+        _cleanup_staged(tmp, stage_dir, snap)
         raise
-    os.replace(tmp, src)
-    reload = revert(pid, settle_seconds)
-    return {
+    try:
+        os.replace(tmp, src)
+    except Exception as exc:
+        # The rename is atomic, so src is still the user's file. Report the
+        # snapshot and the owned stage residue by their real, separate paths.
+        retained, cleanup_error = _cleanup_staged(tmp, stage_dir, snap)
+        raise _transaction_error(
+            exc, phase="replace", file_restored=True, history_snapshot=snap,
+            history_retained=str(snap) in retained,
+            staged_retained=[p for p in retained if p != str(snap)],
+            compensation_error=cleanup_error,
+            retry="Resolve the file replacement error, then retry apply.",
+        ) from exc
+    stage_residue, _ = _cleanup_staged(tmp, stage_dir)
+    try:
+        reload, observed, shot_error = _reload_and_observe(bounded, settle_seconds)
+    except Exception as exc:
+        # The file was replaced but the Modeler did not confirm the reload.
+        # Restore the user's saved file; keep the snapshot ONLY if that fails.
+        try:
+            _replace(src, snap)
+        except Exception as compensation_error:
+            raise _transaction_error(
+                exc, phase="reload", file_restored=False,
+                history_snapshot=snap, history_retained=True,
+                staged_retained=stage_residue,
+                compensation_error=compensation_error,
+                retry="Restore the file from the retained snapshot before retrying.",
+            ) from exc
+        retained, cleanup_error = _cleanup_staged(snap)
+        raise _transaction_error(
+            exc, phase="reload", file_restored=True,
+            history_snapshot=snap, history_retained=str(snap) in retained,
+            staged_retained=stage_residue,
+            compensation_error=cleanup_error,
+            retry="Retry apply once the Modeler can reload the document.",
+        ) from exc
+    result = {
         "path": str(src),
         "process_id": pid,
         "operations": edited["operations"],
         "history_snapshot": str(snap),
         "undo_depth": len(_snapshots(src)),
-        "screenshot": reload["screenshot"],
+        "screenshot": observed,
+        "reload_effect": reload.get("effect"),
+        "reload_verification_required": reload.get("verification_required", True),
     }
+    if stage_residue:
+        result["staged_retained"] = stage_residue
+    if shot_error is not None:
+        result["screenshot_error"] = shot_error
+    return result
 
 
-def undo(path, process_id=None, settle_seconds=3.0):
-    """Restore the file as it was before the last apply and reload it."""
+def undo(path, process_id=None, settle_seconds=3.0, *, session=None):
+    """Restore the file as it was before the last apply and reload it.
+
+    The history snapshot is consumed ONLY after both the atomic file restore
+    and the Modeler reload succeed. A failed reload keeps the snapshot so the
+    same undo can be retried; a failed restore keeps it as the only backup.
+    """
+    bounded = _require_session(session)
     src = Path(path).resolve(strict=True)
-    pid = _require_active(src, process_id)
+    pid = _require_active(bounded, src, process_id)
     snaps = _snapshots(src)
     if not snaps:
         raise LiveError({"error": "no_history", "message": f"No live history for {src.name}"})
-    _replace(src, snaps[-1])
-    snaps[-1].unlink()
-    reload = revert(pid, settle_seconds)
-    return {
+    snap = snaps[-1]
+    try:
+        _replace(src, snap)
+    except Exception as exc:
+        raise _transaction_error(
+            exc, phase="replace", file_restored=False, history_snapshot=snap,
+            history_retained=True,
+            retry="Resolve the file restore error, then retry undo.",
+        ) from exc
+    try:
+        reload, observed, shot_error = _reload_and_observe(bounded, settle_seconds)
+    except Exception as exc:
+        # The disk file is already the restored (pre-apply) state, but the
+        # Modeler did not reload. Keep the snapshot so undo stays retryable.
+        raise _transaction_error(
+            exc, phase="reload", file_restored=True, history_snapshot=snap,
+            history_retained=True,
+            retry="Retry undo to reload the already-restored file.",
+        ) from exc
+    _cleanup_staged(snap)  # consume history only after a confirmed reload
+    result = {
         "path": str(src),
         "process_id": pid,
-        "restored": snaps[-1].name,
-        "undo_depth": len(snaps) - 1,
-        "screenshot": reload["screenshot"],
+        "restored": snap.name,
+        "undo_depth": len(_snapshots(src)),
+        "screenshot": observed,
+        "reload_effect": reload.get("effect"),
+        "reload_verification_required": reload.get("verification_required", True),
     }
+    if shot_error is not None:
+        result["screenshot_error"] = shot_error
+    return result

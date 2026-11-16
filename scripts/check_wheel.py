@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 
 CHECK = r"""
@@ -21,7 +22,6 @@ skills = package / "skills"
 assert (skills / "speedtree-official/metadata/depends.md").is_file()
 expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0,
             "speedtree-nodes": 5, "speedtree-production": 6, "speedtree-live": 7}
-assert (package / "live.ps1").is_file()
 exe = root / "SpeedTree_Modeler.exe"
 exe.write_bytes(b"not executable; metadata-only fixture")
 server = SpeedTreeMcpServer(executable=str(exe), enable_gateway_failover=False,
@@ -40,7 +40,7 @@ try:
         script = Path(action["source_file"]).resolve()
         assert script.is_file() and script.is_relative_to(package), script
         if action["name"].startswith("speedtree_live__"):
-            continue
+            continue  # exact live annotations are checked in test_skill_catalog.py
         mutating = action["name"] == "speedtree_export__export_batch"
         assert action["annotations"]["read_only_hint"] is not (
             mutating or action["name"] in {"speedtree_nodes__edit_graph",
@@ -113,12 +113,14 @@ try:
     assert structure["context"]["primary_generators"] == 1
     bare_entry = runpy.run_path(str(skills / "speedtree-production/scripts/prepare_bare_project.py"))
     assert callable(bare_entry["main"])
+    live_status = runpy.run_path(str(skills / "speedtree-live/scripts/live_status.py"))["main"]()
+    assert live_status["success"] is False and live_status["error"] == "no_authorized_ui_route", live_status
     print(json.dumps({"wheel_import": True, "discovered_and_loaded": expected,
                       "capability_entry_point": "passed", "node_entry_point": "passed",
                       "production_entry_point": "passed", "budget_entry_point": "passed",
                       "pair_entry_point": "passed", "structure_entry_point": "passed",
                       "bare_entry_point": "present", "planarity_entry_point": "passed",
-                      "host_probe": False}))
+                      "live_entry_point": "no_authorized_ui_route", "host_probe": False}))
 finally:
     server.stop()
 """
@@ -128,6 +130,17 @@ def main():
     wheel = Path(sys.argv[1]).resolve(strict=True)
     archives = list(wheel.parent.glob("*.tar.gz"))
     assert len(archives) == 1, "Build the sdist and wheel into the same output directory"
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+        assert not any(name.endswith("live.ps1") for name in names), (
+            "raw UI bridge must not be packaged"
+        )
+        for relative in (
+            "dcc_mcp_speedtree/skills/speedtree-live/tools.yaml",
+            "dcc_mcp_speedtree/skills/speedtree-live/SKILL.md",
+            "dcc_mcp_speedtree/skills/speedtree-live/scripts/live_status.py",
+        ):
+            assert any(name.endswith(relative) for name in names), relative
     with tarfile.open(archives[0]) as archive:
         names = archive.getnames()
         for relative in (

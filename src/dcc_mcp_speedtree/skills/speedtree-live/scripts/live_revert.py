@@ -4,11 +4,17 @@ from dcc_mcp_speedtree import live
 
 
 @skill_entry
-def main(process_id=None, settle_seconds=3.0, **_kwargs):
+def main(process_id=None, settle_seconds=3.0, **kwargs):
     try:
-        result = live.revert(process_id, settle_seconds)
+        result = live.revert(
+            process_id, settle_seconds,
+            session=kwargs.get(live.TRUSTED_SESSION_PARAM),
+        )
     except live.LiveError as exc:
-        return skill_error(str(exc), exc.payload.get("error", "live_failed"), **exc.payload)
+        payload = dict(exc.payload)
+        error = payload.pop("error", "live_failed")
+        payload.pop("message", None)  # str(exc) already supplies the message
+        return skill_error(str(exc), error, **payload)
     return skill_success("Document reloaded from disk; read the screenshot PNG.", **result)
 
 
