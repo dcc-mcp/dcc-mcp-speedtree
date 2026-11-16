@@ -192,88 +192,81 @@ def test_a_failed_connection_cleanup_is_retained(gui):
     assert errors[0].native_evidence["cleanup_status"] == "cleanup_failed"
 
 
-def test_apply_known_non_dispatch_reload_failure_compensates_and_reports_truthfully(gui, tmp_path):
-    """Control: only a positively known non-dispatch may roll the edit back.
+def test_undo_reload_proved_before_execute_reports_truthfully(gui, tmp_path):
+    """Control: the runtime's own action-stage evidence, not a false flag.
 
-    The proof here is the runtime's own action-stage evidence -- pre-dispatch
-    phase, no action attempted, no input sent, completion known, effect not
-    unknown -- not a bare false completion flag.
+    The proof is pre-dispatch phase, no action attempted, no input sent, with
+    completion known and the effect not unknown. Undo is the reachable write
+    path: production apply refuses its dependent phase before any edit.
     """
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
+    snap = harness.seed_snapshot(tree, "5")  # controlled fixture, not an apply
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "pre_dispatch_refusal"}
-    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "the user's saved file must be restored"
-    assert not list(live._snapshots(tree))
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert length(tree) == "5", "the restored file stays restored"
+    assert snap.is_file(), "the history is retained for the documented retry"
     assert payload["phase"] == "reload"
     assert payload["dispatch"] == "not_dispatched"
     assert payload["native_error"]["native_evidence"]["details"]["phase"] == "pre_dispatch"
     assert payload["native_error"]["native_evidence"]["details"]["input_sent"] == "not_sent"
     assert payload["native_error"]["native_evidence"]["details"]["completion"] == "known"
     assert payload["file_restored"] is True
-    assert payload["history_retained"] is False
-    assert payload["history_snapshot"] is None
+    assert payload["history_retained"] is True
     assert payload["gui_state"] == "unknown"
     assert payload["error"] == "menu_action_rejected"
     assert payload["retry"]
     json.dumps(payload)
 
 
-def test_apply_unclassified_dispatch_error_preserves_mutation_and_backup(gui, tmp_path):
+def test_undo_unclassified_dispatch_error_preserves_the_restore_and_backup(gui, tmp_path):
     """A dispatch error the runtime cannot classify is not a known failure."""
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
+    snap = harness.seed_snapshot(tree, "5")
     gui.transport.fail_action_matching = {"keys": "ctrl+r"}
-    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "9", "the edit stays on disk; the reload may have run"
-    snapshots = list(live._snapshots(tree))
-    assert len(snapshots) == 1, "the only backup must survive"
-    assert payload["error"] == "reload_effect_unknown"
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert length(tree) == "5", "the restore stays on disk"
+    assert snap.is_file(), "the only backup must survive"
     assert payload["dispatch"] == "unknown_dispatch"
-    assert payload["file_restored"] is False
+    assert payload["file_restored"] is True, "the local restore already happened"
     assert payload["history_retained"] is True
-    assert payload["history_snapshot"] == str(snapshots[0])
     assert payload["gui_state"] == "unknown"
     assert payload["native_error"]["type"] == "OwnedCuaMcpError"
-    assert payload["recovery"]["restore_with"] == "live_undo"
     assert "compensation_error" not in payload, "no blind compensation may be attempted"
     json.dumps(payload)
 
 
-def test_apply_partial_insertion_preserves_mutation_and_backup(gui, tmp_path):
+def test_undo_partial_insertion_preserves_the_restore_and_backup(gui, tmp_path):
     """A partial insertion reports false flags while input already reached it."""
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
+    snap = harness.seed_snapshot(tree, "5")
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "partial"}
-    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "9", "input was inserted, so the edit must not be rolled back"
-    assert len(list(live._snapshots(tree))) == 1
-    assert payload["error"] == "reload_effect_unknown"
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert length(tree) == "5", "input was inserted, so nothing is rolled back"
+    assert snap.is_file()
     assert payload["dispatch"] == "partial"
-    assert payload["file_restored"] is False
+    assert payload["file_restored"] is True
     assert payload["history_retained"] is True
 
 
-def test_apply_compensation_failure_keeps_the_only_backup(gui, tmp_path, monkeypatch):
+def test_undo_restore_failure_keeps_the_only_backup(gui, tmp_path, monkeypatch):
+    """Limited unit check of the transaction logic, not real-time acceptance."""
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "pre_dispatch_refusal"}
+    snap = harness.seed_snapshot(tree, "5")
     monkeypatch.setattr(
-        live, "_replace", lambda src, snap: (_ for _ in ()).throw(OSError("disk full"))
+        live, "_replace", lambda src, source: (_ for _ in ()).throw(OSError("disk full"))
     )
-    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    snapshots = list(live._snapshots(tree))
-    assert len(snapshots) == 1, "the only backup must survive"
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert snap.is_file(), "the only backup must survive"
+    assert payload["phase"] == "replace"
     assert payload["file_restored"] is False
     assert payload["history_retained"] is True
-    assert payload["history_snapshot"] == str(snapshots[0])
-    assert payload["compensation_error"]
+    assert payload["history_snapshot"] == str(snap)
+    assert payload["retry"]
 
 
 def test_undo_keeps_the_snapshot_until_the_reload_is_confirmed(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    harness.seed_snapshot(tree, "5")  # controlled fixture
     gui.transport.fail_action_matching = {"keys": "ctrl+r"}
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
     assert length(tree) == "5"
@@ -289,10 +282,10 @@ def test_undo_keeps_the_snapshot_until_the_reload_is_confirmed(gui, tmp_path):
 
 def test_screenshot_failure_after_a_committed_reload_does_not_roll_back(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    gui.transport.fail_snapshot_from = 3  # the post-commit observation
-    result = live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "9", "a committed edit must not be rolled back"
+    harness.seed_snapshot(tree, "5")  # controlled fixture
+    gui.transport.fail_snapshot_from = 2  # the post-reload observation
+    result = live.undo(tree, settle_seconds=0, session=gui.session)
+    assert length(tree) == "5", "a completed restore must not be rolled back"
     assert result["undo_depth"] == 1
     assert result["screenshot"] is None
     assert "capture_proof_rejected" in result["screenshot_error"]

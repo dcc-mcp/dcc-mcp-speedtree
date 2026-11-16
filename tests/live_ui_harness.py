@@ -11,6 +11,7 @@ production route instead of a stand-in for it.
 from __future__ import annotations
 
 import base64
+import os
 import struct
 import zlib
 from pathlib import Path
@@ -125,11 +126,14 @@ class ScriptedTransport:
         # "pre_dispatch_refusal" (runtime evidence: pre_dispatch phase, no
         # action attempted, input not sent, completion known).
         self.action_outcomes: dict[str, str] = {}
-        # The Modeler's in-memory document, so a delivered save can be observed
-        # to actually change the file the adapter is about to edit.
+        # Controlled SAVE fixture: what the fixture does to the file when the
+        # save is delivered. "none" leaves it alone, "touch" changes only the
+        # mtime, "content" writes ``pending_value`` into it. These model a disk
+        # change, never a proven Modeler save -- the adapter must not treat any
+        # of them as confirmation.
+        self.save_effect = "none"
         self.document_path: Path | None = None
-        self.pending_value = "5"
-        self.flush_on_save = True
+        self.pending_value = "13"
 
     def _context(self) -> dict:
         return {
@@ -292,16 +296,21 @@ class ScriptedTransport:
                     {"requested_events": 2, "inserted_events": 1, "mutation_attempted": True}
                 )
             if delivered and self._is_save(action):
-                self._flush_document()
+                self._apply_save_effect()
             return {**base, "type": "action_completed", "success": success, "result": result}
         raise AssertionError(f"unexpected method {method}")
 
     def _is_save(self, action: dict) -> bool:
         return (action.get("keys") or action.get("text")) == SAVE_ROUTE["keys"]
 
-    def _flush_document(self) -> None:
-        """Model a real File > Save: the in-memory document is written to disk."""
-        if self.flush_on_save and self.document_path is not None:
+    def _apply_save_effect(self) -> None:
+        """Apply the controlled save fixture to the file on disk."""
+        if self.document_path is None or self.save_effect == "none":
+            return
+        if self.save_effect == "touch":
+            st = self.document_path.stat()
+            os.utime(self.document_path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+        elif self.save_effect == "content":
             write_tree(self.document_path, self.pending_value)
 
     @staticmethod
@@ -375,18 +384,35 @@ class Harness:
             menu_routes=MENU_ROUTES if menu_routes is None else menu_routes,
         )
 
-    def arm_document(self, path, pending: str = "5"):
-        """Model the Modeler holding ``pending`` in memory for ``path`` on disk.
+    def arm_document(self, path, pending: str = "13", effect: str = "content"):
+        """Controlled save fixture: the file on disk changes when save is delivered.
 
-        A delivered save then really writes that value into the file, so the
-        adapter's same-task save observation has something to observe. Without
-        this the save is a scripted no-op and the prerequisite stays unproven,
-        which is exactly the refusal case.
+        ``effect`` is ``"none"``, ``"touch"`` (metadata only) or ``"content"``
+        (the fixture writes ``pending`` into the file). All three model a DISK
+        change; none of them is a proven bound-Modeler save, which is exactly the
+        point: the adapter must refuse the dependent edit for every one of them,
+        and must leave a legitimate fixture write at its own value.
         """
         self.transport.document_path = Path(path)
         self.transport.pending_value = pending
-        self.transport.flush_on_save = True
+        self.transport.save_effect = effect
         return self
+
+
+def seed_snapshot(path, value: str = "5"):
+    """Controlled fixture: one pre-existing history snapshot for undo tests.
+
+    Production ``apply`` now refuses its dependent write, so ``undo``'s pure-file
+    path is seeded directly instead of being produced by an ``apply`` the guard
+    would reject. This is test setup and is labeled as such -- it is not evidence
+    that the live edit feature works.
+    """
+    src = Path(path)
+    folder = src.parent / "_live_history" / src.stem
+    folder.mkdir(parents=True, exist_ok=True)
+    snap = folder / f"seeded{value}{src.suffix}"
+    write_tree(snap, value)
+    return snap
 
 
 def bridge_with_session(session: Any) -> TrustedLiveExecutionBridge:

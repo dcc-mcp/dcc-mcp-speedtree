@@ -7,8 +7,6 @@ transport: no dcc-cua binary is launched, no Modeler is started, no native
 input is delivered and no shared Host is touched.
 """
 
-from pathlib import Path
-
 import live_ui_harness as harness
 import pytest
 from live_ui_harness import length, write_tree
@@ -54,25 +52,20 @@ def test_revert_refuses_an_unconfirmed_delivery(gui):
     assert payload["dispatch"] == "partial"
 
 
-def test_apply_reports_the_reload_as_unverified_and_keeps_the_history(gui, tmp_path):
+def test_apply_creates_no_history_and_sends_no_reload(gui, tmp_path):
+    """The dependent phase never starts, so no reload is delivered either."""
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree)
-    result = live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    verification = result.get("verification")
-    assert verification, "a delivered-but-unverifiable reload must be reported"
-    assert verification["status"] in {"unknown", "pending"}
-    assert verification["history_retained"] is True
-    assert Path(verification["history_snapshot"]).is_file()
-    assert result["reload"]["delivered"] is True
-    assert result["reload"]["effect"] == "unverifiable"
-    assert result["reload"]["verification_required"] is True
+    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    assert payload["error"] == "save_prerequisite_unverified"
+    assert not live._history(tree).exists(), "no history may be created"
+    assert gui.transport.action_keys() == ["ctrl+s"], "no reload is delivered"
 
 
 def test_undo_keeps_the_only_snapshot_when_the_reload_is_unverified(gui, tmp_path):
+    """Controlled fixture: the snapshot is seeded, not produced by apply."""
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    snapshots = list(live._snapshots(tree))
+    snapshots = [harness.seed_snapshot(tree, "5")]
     assert len(snapshots) == 1
     result = live.undo(tree, settle_seconds=0, session=gui.session)
     assert snapshots[0].is_file(), "the only backup must survive an unverified reload"
@@ -80,16 +73,19 @@ def test_undo_keeps_the_only_snapshot_when_the_reload_is_unverified(gui, tmp_pat
     assert result["verification"]["history_retained"] is True
     assert result["undo_depth"] == 1, "retained history is still undoable"
     assert result["verification"]["status"] in {"unknown", "pending"}
+    assert result["reload"]["delivered"] is True
+    assert result["reload"]["effect"] == "unverifiable"
+    assert result["reload"]["verification_required"] is True
 
 
 def test_a_delivered_but_unverified_reload_is_not_compensated(gui, tmp_path):
-    """Compensation would undo an edit the Modeler may already have loaded."""
+    """Undo keeps the restored file; an uncertain reload rolls nothing back."""
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    result = live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "9", "an unverified reload must not silently revert the edit"
+    harness.seed_snapshot(tree, "5")
+    result = live.undo(tree, settle_seconds=0, session=gui.session)
+    assert length(tree) == "5", "the restore stays; no silent rollback"
     assert result["verification"]["status"] in {"unknown", "pending"}
-    assert gui.transport.action_keys() == ["ctrl+s", "ctrl+r"]
+    assert gui.transport.action_keys() == ["ctrl+r"]
 
 
 def test_apply_refuses_a_process_id_that_is_not_the_bound_window(gui, tmp_path):
