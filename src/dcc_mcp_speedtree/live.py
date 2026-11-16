@@ -68,13 +68,19 @@ edit on disk and the only history snapshot and is reported as
 a blind rollback would destroy the user's own edit and only recovery copy.
 Classification never comes from a self-reported flag or a transport label.
 
-``apply`` additionally refuses its dependent destructive phase when the SAVE
-PREREQUISITE is not established. Delivery of the save is not enough, because the
-save effect is unverifiable on this route; the file itself is observed either
-side of the delivered save, and an unchanged file means no evidence, so the
-phase stops with ``disk_mutation`` and ``history_mutation`` false and the gap is
-named as an adapter capability gap (``save_effect_verifier: NOT_AVAILABLE``) --
-not as a statement about the public protocol or another host.
+``apply`` additionally REFUSES its dependent destructive phase whenever the SAVE
+PREREQUISITE is not source-bound-confirmed, which on the implemented pixels-only
+route means always. Delivery of the save is not enough, and neither is a file
+observation: a changed mtime or a changed content hash proves the disk changed,
+not that the bound Modeler saved its current GUI edits into the requested
+document, because another process, the user, an autosave or a plain metadata
+touch looks identical. The file observation is therefore reported as a
+diagnostic with ``authority: none`` and never licenses the edit, the history
+snapshot or the reload. The refusal happens before any of them, with
+``disk_mutation`` and ``history_mutation`` false, and the gap is named as an
+adapter capability gap (``save_effect_verifier: NOT_AVAILABLE``) -- not as a
+statement about the public protocol or another host. No automatic retry and no
+synthesized acknowledgement are produced.
 
 These are limited guarantees: after a reload that was not delivered the Modeler
 GUI state is UNKNOWN; ``undo`` restores the file on disk and delivers the
@@ -222,35 +228,62 @@ def _file_state(path):
     }
 
 
-def save_postcondition(before, after):
-    """Whether the save demonstrably put the Modeler's document on disk.
+def save_disk_observation(before, after):
+    """A filesystem diagnostic only: it carries NO save authority.
 
-    The only same-task observation available on this adapter's implemented
-    pixels-only route is the FILE ITSELF: if the bytes changed after the save
-    was delivered, the Modeler flushed its edits into it, and the disk state is
-    known to match the document at save time. If the bytes did not change, no
-    evidence exists -- the Modeler may have had nothing pending, or the save may
-    never have taken effect -- so the precondition for the dependent destructive
-    phase is NOT established. This reads a file; it is not a grant, not a
-    self-reported flag and not a native read.
+    A changed mtime or a changed content hash proves that the disk changed. It
+    does not prove that the BOUND Modeler wrote its current GUI edits into the
+    requested document: another process, the user, a background autosave or a
+    plain metadata touch produces the same observation. So this never licenses
+    the dependent destructive phase; it is reported as a diagnostic next to the
+    unknown save state.
     """
-    changed = before != after
     return {
-        "established": changed,
-        "method": "same_task_file_observation",
-        "evidence": {"before": dict(before), "after": dict(after)},
+        "content_changed": before["sha256"] != after["sha256"],
+        "metadata_only_change": before["sha256"] == after["sha256"] and before != after,
+        "before": dict(before),
+        "after": dict(after),
+        "authority": "none",
         "reason": (
-            "The saved bytes changed on disk, so the Modeler flushed its pending "
-            "edits into this file."
-            if changed
-            else "The saved bytes did not change on disk: that is consistent both with "
-            "no pending edits and with a save that never took effect, so the "
-            "prerequisite is unproven."
+            "A file observation cannot bind a disk change to the bound Modeler's "
+            "save of its GUI edits into this document; another writer or a metadata "
+            "touch looks identical."
         ),
     }
 
 
-def _save_prerequisite_unverified(saved, postcondition):
+# The implemented pixels-only route reports the save EFFECT as unverifiable and
+# exposes no source-bound save confirmation -- no application-semantics
+# acknowledgement, no process/document binding and no verifiable provenance.
+# Until a project route provides one, the prerequisite is unknown on every call.
+SAVE_CONFIRMATION_UNAVAILABLE = {
+    "established": False,
+    "method": "none",
+    "authority": "none",
+    "reason": (
+        "No project-route confirmation with explicit application semantics, correct "
+        "process/document binding and verifiable provenance is available on the "
+        "implemented pixels-only route, so the save prerequisite stays unknown."
+    ),
+}
+
+
+def _save_confirmation(saved, observation):
+    """The source-bound save confirmation this route can offer, if any.
+
+    A confirmation must come from the project route with explicit application
+    semantics, the correct process/document binding and verifiable provenance for
+    THIS document. The implemented pixels-only client reports the save effect as
+    unverifiable and exposes nothing of that kind, and a file observation cannot
+    be bound to the bound Modeler's save, so there is none here. Returning
+    ``None`` keeps the refusal honest and leaves exactly one extension point for
+    a route that does provide it; it is not a flag, a grant, a caller-supplied
+    value or a synthesized acknowledgement.
+    """
+    return None
+
+
+def _save_prerequisite_unverified(saved, observation, confirmation=None):
     """Refuse the dependent destructive phase BEFORE any disk or history write."""
     return LiveError(
         {
@@ -260,23 +293,34 @@ def _save_prerequisite_unverified(saved, postcondition):
             "disk_mutation": False,
             "history_mutation": False,
             "gui_state": "unknown",
-            "save_postcondition": postcondition,
+            "save_delivery": {
+                "delivery_completed": saved.get("delivery_completed"),
+                "post_dispatch_validated": saved.get("post_dispatch_validated"),
+                "effect": saved.get("effect"),
+            },
+            "save_postcondition": dict(confirmation or SAVE_CONFIRMATION_UNAVAILABLE),
+            "save_disk_observation": observation,
             "adapter_capability": {
                 "save_effect_verifier": "NOT_AVAILABLE",
                 "route": "owned_mcp_pixels / pixels_only",
                 "scope": (
-                    "This adapter's implemented route has no supported same-task "
-                    "verifier for the save effect; a file observation is used when it "
-                    "is informative and the phase is otherwise refused. This is an "
-                    "adapter capability gap, not a statement about the public "
-                    "DCC-CUA protocol or another host."
+                    "This adapter's implemented route has no source-bound save "
+                    "confirmation: the pixels-only client reports the application effect "
+                    "as unverifiable and exposes no application-semantics "
+                    "acknowledgement with process/document binding, so the dependent "
+                    "phase is refused instead of being inferred from a timestamp or a "
+                    "content-hash delta. This is an adapter capability gap, not a "
+                    "statement about the public DCC-CUA protocol or another host."
                 ),
             },
             "message": (
-                "The save was delivered, but no supported same-task observation proves "
-                "the Modeler wrote its pending edits to disk, so the dependent file "
-                "edit is refused before any disk or history mutation. Save the "
-                "document in the Modeler so the file changes, then retry."
+                "The save command was delivered, but nothing on this route confirms that "
+                "the bound Modeler saved its current GUI edits into this document: the "
+                "effect is reported as unverifiable and a file timestamp or content "
+                "change cannot be bound to that specific save. The dependent file edit "
+                "and the history write are refused before either starts. This is a "
+                "reported capability gap, not a completed live edit; no automatic retry "
+                "is performed."
             ),
         }
     )
@@ -666,44 +710,43 @@ def _reload_and_observe(bounded, settle_seconds):
 
 
 def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None):
-    """Save the open tree, record a history copy, apply operations and reload it.
+    """Deliver the save, then REFUSE the dependent edit on this route.
 
-    The dependent edit is gated on a SAVE PREREQUISITE that is actually
-    established, not merely delivered: the runtime reports the save effect as
-    unverifiable, so ``apply`` observes the file itself either side of the
-    delivered save and refuses -- with the disk and the history untouched --
-    when that observation does not show the Modeler writing its pending edits to
-    disk. A delivery that was never confirmed is refused earlier still.
+    The dependent edit may only run once a source-bound save confirmation exists:
+    a project-route acknowledgement with explicit application semantics, correct
+    process/document binding and verifiable provenance proving that the bound
+    Modeler saved its current GUI edits into THIS document. The implemented
+    pixels-only client reports the save effect as ``unverifiable`` and exposes no
+    such confirmation, so the prerequisite is unknown on every call and the
+    business-file edit, the history snapshot and the reload are all refused before
+    any of them start.
 
-    The edit is then committed to disk by one atomic rename, then reloaded by the
-    Modeler. A reload whose dispatch is uncertain leaves the edit and the only
-    backup in place; only a reload positively known never to have been dispatched
-    restores the user's saved file from the snapshot and reports a structured
-    retryable receipt. A screenshot failure AFTER a delivered reload is only
-    observation loss: the transaction stays committed and ``screenshot_error`` is
-    returned instead. The staged edit is owned by this call alone, so earlier
-    recovery material is never touched.
+    A file observation is still taken either side of the delivered save, but it is
+    reported as a DIAGNOSTIC ONLY: a changed mtime or a changed content hash shows
+    that the disk changed, not that the bound Modeler saved into this document --
+    another process, the user, an autosave or a metadata touch looks identical.
+    It therefore never licenses the dependent phase, and no timestamp, hash
+    delta, transport label or caller-supplied value may replace it.
+
+    A save delivery the runtime did not confirm is refused earlier still, with the
+    same guarantee: no disk, history or output mutation.
     """
     bounded = _require_session(session)
     bounded.require_target(process_id)  # before any native read, path, history or output work
     src = Path(path).resolve(strict=True)
     pid = _require_active(bounded, src)
-    # The save prerequisite is the whole reason the dependent edit is safe: it is
-    # what keeps the user's own unsaved GUI edits from being overwritten by this
-    # call. Delivery alone does not establish it, because the runtime reports the
-    # save EFFECT as unverifiable, so a same-task observation of the file is
-    # taken either side of the delivered save.
+    # Diagnostic only -- see the docstring. It is not the prerequisite.
     before = _file_state(src)
-    saved = bounded.menu("save")  # keeps the user's own GUI edits in the file we edit
+    saved = bounded.menu("save")  # would keep the user's own GUI edits in the file we edit
     if not _delivery_confirmed(saved):
         # Nothing has been written yet: refuse before any history or staging.
         raise _delivery_failure("save", saved)
-    after = _file_state(src)
-    postcondition = save_postcondition(before, after)
-    if not postcondition["established"]:
-        # Refuse the dependent destructive phase with the disk and the history
-        # untouched, and say plainly that this is an adapter capability gap.
-        raise _save_prerequisite_unverified(saved, postcondition)
+    observation = save_disk_observation(before, _file_state(src))
+    confirmation = _save_confirmation(saved, observation)
+    if not confirmation or not confirmation["established"]:
+        # No route on this adapter can confirm the save, so the destructive
+        # dependent phase is refused with the disk and the history untouched.
+        raise _save_prerequisite_unverified(saved, observation, confirmation)
     history_dir = _history(src)
     history_dir.mkdir(parents=True, exist_ok=True)
     snap = history_dir / f"{datetime.now():%Y%m%d_%H%M%S_%f}{src.suffix}"
@@ -772,7 +815,8 @@ def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None
         "path": str(src),
         "process_id": pid,
         "operations": edited["operations"],
-        "save_postcondition": postcondition,
+        "save_postcondition": dict(confirmation),
+        "save_disk_observation": observation,
         "history_snapshot": str(snap),
         "undo_depth": len(_snapshots(src)),
         "screenshot": observed,

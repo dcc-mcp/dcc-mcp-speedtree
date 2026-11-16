@@ -46,28 +46,31 @@ def run_wrapper(name, session, **params):
 # --- F4: dispatch that happened but could not be validated --------------------
 
 
-def test_post_dispatch_unknown_reload_preserves_mutation_and_backup(gui, tmp_path):
+def test_post_dispatch_unknown_reload_preserves_the_restore_and_backup(gui, tmp_path):
+    """Delivery happened, so the Modeler may have executed the reload.
+
+    Undo is the reachable write path: production apply refuses before any edit,
+    so this asserts that a possibly-executed reload rolls nothing back and keeps
+    the only backup.
+    """
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
+    harness.seed_snapshot(tree, "5")  # controlled fixture, not an apply
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "post_invalidated"}
-    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    # Delivery happened, so the Modeler may have executed the reload: the edit
-    # stays on disk and the only backup is kept. No blind compensation.
-    assert length(tree) == "9", "a possibly-executed reload must not be rolled back"
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert length(tree) == "5", "the restore stays on disk"
     assert len(list(live._snapshots(tree))) == 1, "the only backup must survive"
-    assert payload["file_restored"] is False
+    assert payload["file_restored"] is True, "the local restore already happened"
     assert payload["history_retained"] is True
-    assert payload["history_snapshot"]
     assert payload["dispatch"] == "delivered_unverified"
     assert payload["gui_state"] == "unknown"
 
 
 def test_transport_error_after_dispatch_is_not_a_known_failure(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
+    harness.seed_snapshot(tree, "5")
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "transport_error"}
-    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "9", "an unclassified dispatch error must not roll back the edit"
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert length(tree) == "5", "an unclassified dispatch error must roll nothing back"
     assert len(list(live._snapshots(tree))) == 1
     assert payload["dispatch"] == "unknown_dispatch"
     assert payload["history_retained"] is True
@@ -82,25 +85,22 @@ def test_known_no_dispatch_failure_still_compensates(monkeypatch, tmp_path):
     physical input can have been dispatched.
     """
     monkeypatch.setattr(live, "SHOT_DIR", tmp_path / "shots")
-    gui = harness.Harness(monkeypatch, menu_routes={"save": harness.SAVE_ROUTE})
+    gui = harness.Harness(monkeypatch, menu_routes={"save": harness.SAVE_ROUTE})  # no revert
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "a proved non-dispatch restores the saved file"
-    assert not list(live._snapshots(tree))
-    assert payload["file_restored"] is True
-    assert payload["history_retained"] is False
+    snap = harness.seed_snapshot(tree, "5")  # controlled fixture
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert length(tree) == "5", "the restored file stays restored"
+    assert snap.is_file(), "the history is retained for the documented retry"
     assert payload["dispatch"] == "not_dispatched"
     assert payload["no_dispatch_proof"]["boundary"] == "menu_route_declaration"
     assert payload["no_dispatch_proof"]["execute_entered"] is False
     assert payload["gui_state"] == "unknown"
-    assert gui.transport.action_keys() == ["ctrl+s"], "the reload was never attempted"
+    assert gui.transport.action_keys() == [], "the reload was never attempted"
 
 
 def test_undo_keeps_the_backup_for_a_post_dispatch_unknown_reload(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    harness.seed_snapshot(tree, "5")
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "post_invalidated"}
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
     assert length(tree) == "5", "the disk restore is real"
@@ -112,22 +112,25 @@ def test_undo_keeps_the_backup_for_a_post_dispatch_unknown_reload(gui, tmp_path)
 # --- F1: wrapper text must not claim an unverified effect ---------------------
 
 
-def test_apply_wrapper_message_does_not_claim_the_effect(gui, tmp_path):
+def test_apply_wrapper_reports_the_refusal_without_an_effect_claim(gui, tmp_path):
+    """The shipped wrapper must not present the refusal as an applied change."""
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree)
     result = run_wrapper(
         "live_apply.py", gui.session, path=str(tree), operations=SET_LENGTH, settle_seconds=0
     )
+    assert result["success"] is False
     message = result["message"].lower()
     assert "applied and reloaded" not in message
-    assert "unverified" in message
-    assert result["context"]["verification"]["status"] == "unknown"
+    assert "unverified" not in message.replace("unverifiable", "")
+    assert result["error"] == "save_prerequisite_unverified"
+    assert result["context"]["save_postcondition"]["established"] is False
+    assert result["context"]["adapter_capability"]["save_effect_verifier"] == "NOT_AVAILABLE"
 
 
 def test_undo_wrapper_message_reports_the_retained_backup(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    harness.seed_snapshot(tree, "5")  # controlled fixture
     result = run_wrapper("live_undo.py", gui.session, path=str(tree), settle_seconds=0)
     message = result["message"].lower()
     assert "undone and reloaded" not in message

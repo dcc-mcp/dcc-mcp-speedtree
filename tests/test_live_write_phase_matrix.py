@@ -88,46 +88,68 @@ def test_save_exception_is_not_a_proved_non_dispatch(gui):
 # --- apply: save prerequisite --------------------------------------------------
 
 
-def test_apply_refuses_the_dependent_edit_when_the_save_is_unproven(gui, tmp_path):
-    """Delivery alone must not promote to 'the GUI edits are on disk'."""
+def test_apply_refuses_the_dependent_edit_for_every_save_fixture(gui, tmp_path):
+    """No disk change of any kind may unlock the dependent phase.
+
+    The three fixtures model the disk, not the Modeler: no change at all, an
+    mtime-only touch, and a real content change written by the fixture. A
+    timestamp proves the metadata changed and a hash proves the bytes changed;
+    neither proves the BOUND Modeler saved its current GUI edits into THIS
+    document, so all three must be refused identically.
+    """
+    for effect, expected_value, content_changed in (
+        ("none", "2", False),
+        ("touch", "2", False),
+        ("content", "13", True),
+    ):
+        folder = tmp_path / effect
+        folder.mkdir()
+        tree = write_tree(folder / "tree.spm")
+        gui.arm_document(tree, effect=effect)
+        gui.transport.calls.clear()
+        payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+        assert payload["error"] == "save_prerequisite_unverified"
+        assert payload["phase"] == "save_prerequisite"
+        assert payload["dispatch"] == "delivered"
+        assert payload["disk_mutation"] is False
+        assert payload["history_mutation"] is False
+        assert payload["save_postcondition"]["established"] is False
+        assert payload["save_postcondition"]["method"] == "none"
+        assert payload["save_postcondition"]["authority"] == "none"
+        assert payload["adapter_capability"]["save_effect_verifier"] == "NOT_AVAILABLE", (
+            "the gap must be named as an adapter capability, not a protocol claim"
+        )
+        observation = payload["save_disk_observation"]
+        assert observation["content_changed"] is content_changed
+        assert observation["metadata_only_change"] is (effect == "touch")
+        assert observation["authority"] == "none", "a disk observation proves no save"
+        # External facts: the fixture's own write may stand, the adapter's may not.
+        assert length(tree) == expected_value, "the adapter must not edit the file to 9"
+        assert not live._history(tree).exists(), "no history may be created"
+        assert not list(live._snapshots(tree))
+        assert not list(tmp_path.rglob(".live_*"))
+        assert gui.transport.action_keys() == ["ctrl+s"], "no reload may be attempted"
+        json.dumps(payload)
+
+
+def test_apply_never_reaches_the_edit_even_with_a_fixture_flush(gui, tmp_path):
+    """The fixture writes 13; the adapter must leave 13 and claim nothing."""
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    gui.transport.flush_on_save = False  # delivered, but the file never changes
+    gui.arm_document(tree, pending="13", effect="content")
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     assert payload["error"] == "save_prerequisite_unverified"
-    assert payload["phase"] == "save_prerequisite"
-    assert payload["dispatch"] == "delivered"
-    assert payload["disk_mutation"] is False
-    assert payload["history_mutation"] is False
+    assert length(tree) == "13"
+    assert payload["save_disk_observation"]["content_changed"] is True
+    assert payload["save_disk_observation"]["authority"] == "none"
     assert payload["save_postcondition"]["established"] is False
-    assert payload["save_postcondition"]["method"] == "same_task_file_observation"
-    assert payload["adapter_capability"]["save_effect_verifier"] == "NOT_AVAILABLE", (
-        "the gap must be named as an adapter capability, not a protocol claim"
-    )
-    # External facts: the file is untouched, no history, no stage, no reload.
-    assert length(tree) == "2", "no dependent write may happen"
-    assert not live._history(tree).exists(), "no history may be created"
-    assert not list(live._snapshots(tree))
-    assert not list(tmp_path.glob(".live_*"))
-    assert gui.transport.action_keys() == ["ctrl+s"], "the reload must not be attempted"
+    assert not live._history(tree).exists(), "no snapshot of a refused phase"
 
 
-def test_apply_proceeds_only_with_an_established_save_postcondition(gui, tmp_path):
+@pytest.mark.parametrize("effect", ["none", "touch", "content"])
+def test_apply_refusal_reaches_the_wrapper_without_an_effect_claim(gui, tmp_path, effect):
+    """The shipped wrapper must not present the refusal as an applied change."""
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    result = live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "9", "the edit landed on disk"
-    assert length(result["history_snapshot"]) == "5", "the snapshot holds the flushed edits"
-    postcondition = result["save_postcondition"]
-    assert postcondition["established"] is True
-    assert postcondition["evidence"]["before"] != postcondition["evidence"]["after"]
-    json.dumps(postcondition)  # the receipt stays JSON-serialisable
-
-
-def test_apply_refusal_reaches_the_wrapper_without_an_effect_claim(gui, tmp_path):
-    tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    gui.transport.flush_on_save = False
+    gui.arm_document(tree, effect=effect)
     result = run_wrapper(
         "live_apply.py", gui.session, path=str(tree), operations=SET_LENGTH, settle_seconds=0
     )
@@ -136,6 +158,8 @@ def test_apply_refusal_reaches_the_wrapper_without_an_effect_claim(gui, tmp_path
     assert "applied" not in result["message"].lower()
     assert result["context"]["disk_mutation"] is False
     assert result["context"]["history_mutation"] is False
+    assert result["context"]["save_postcondition"]["established"] is False
+    assert result["context"]["save_disk_observation"]["authority"] == "none"
     assert result["context"]["adapter_capability"]["save_effect_verifier"] == "NOT_AVAILABLE"
 
 
@@ -150,37 +174,39 @@ def test_apply_refusal_reaches_the_wrapper_without_an_effect_claim(gui, tmp_path
         ("transport_error", "unknown_dispatch"),
     ],
 )
-def test_apply_reload_uncertainty_preserves_the_edit_and_the_backup(
+def test_apply_reload_uncertainty_never_reaches_the_dependent_phase(
     gui, tmp_path, outcome, expected_dispatch
 ):
-    """Every uncertain form, structured false and exception alike."""
+    """The gate comes first, so no reload-uncertainty form can start an edit.
+
+    The preservation of an edit and its backup is asserted on undo, which is the
+    write path that still reaches a reload.
+    """
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree)
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: outcome}
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "9", "the edit stays; the reload may already have run"
-    assert len(list(live._snapshots(tree))) == 1, "the only backup must survive"
-    assert payload["dispatch"] == expected_dispatch
-    assert payload["file_restored"] is False
-    assert payload["history_retained"] is True
-    assert payload["gui_state"] == "unknown"
-    assert "compensation_error" not in payload, "no blind compensation was attempted"
+    assert payload["error"] == "save_prerequisite_unverified"
+    assert length(tree) == "13", "no adapter edit may exist to preserve or roll back"
+    assert not live._history(tree).exists()
+    assert gui.transport.action_keys() == ["ctrl+s"]
 
 
-def test_apply_reload_proved_before_execute_may_compensate(monkeypatch, tmp_path):
+def test_undo_reload_proved_before_execute_may_keep_the_restore(monkeypatch, tmp_path):
     """The control: the refusal happens on this side of the client."""
     monkeypatch.setattr(live, "SHOT_DIR", tmp_path / "shots")
-    gui = harness.Harness(monkeypatch, menu_routes={"save": SAVE_ROUTE})
+    gui = harness.Harness(monkeypatch, menu_routes={"save": SAVE_ROUTE})  # no revert route
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "the saved file is restored"
-    assert not list(live._snapshots(tree))
+    snap = harness.seed_snapshot(tree, "5")  # controlled fixture
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert length(tree) == "5", "the restored file stays"
+    assert snap.is_file(), "history is retained for the documented retry"
     assert payload["dispatch"] == "not_dispatched"
     assert payload["no_dispatch_proof"]["execute_entered"] is False
     assert payload["file_restored"] is True
-    assert payload["history_retained"] is False
-    assert gui.transport.action_keys() == ["ctrl+s"], "no reload was attempted"
+    assert payload["history_retained"] is True
+    assert payload["gui_state"] == "unknown"
+    assert gui.transport.action_keys() == [], "no reload was attempted"
 
 
 # --- undo / revert -------------------------------------------------------------
@@ -188,8 +214,7 @@ def test_apply_reload_proved_before_execute_may_compensate(monkeypatch, tmp_path
 
 def test_undo_wrapper_reports_the_disk_restore_without_claiming_the_application(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    harness.seed_snapshot(tree, "5")  # controlled fixture, not an apply
     result = run_wrapper("live_undo.py", gui.session, path=str(tree), settle_seconds=0)
     assert length(tree) == "5", "the disk restore is a real, external fact"
     message = result["message"].lower()
@@ -201,8 +226,7 @@ def test_undo_wrapper_reports_the_disk_restore_without_claiming_the_application(
 
 def test_undo_keeps_the_snapshot_for_both_uncertain_forms(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    harness.seed_snapshot(tree, "5")  # controlled fixture
     for outcome in ("post_invalidated", "partial", "transport_error"):
         gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: outcome}
         payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)

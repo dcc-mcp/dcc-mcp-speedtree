@@ -42,6 +42,14 @@ def gui(monkeypatch, tmp_path):
     return harness.Harness(monkeypatch)
 
 
+def payload_of(fn, *args, **kwargs):
+    try:
+        fn(*args, **kwargs)
+    except live.LiveError as exc:
+        return exc.payload
+    raise AssertionError("expected a LiveError")
+
+
 def test_status_reports_the_exact_target_and_unverified_document(gui):
     state = live.status(session=gui.session)
     assert state["target"]["process_id"] == harness.PID
@@ -57,31 +65,38 @@ def test_screenshot_writes_a_real_native_png(gui):
     assert result["target"]["process_id"] == harness.PID
 
 
-def test_apply_edits_in_place_snapshots_and_reloads(gui, tmp_path):
+def test_apply_refuses_the_dependent_write_without_a_source_bound_save(gui, tmp_path):
+    """No save confirmation exists on this route, so nothing dependent runs."""
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)  # the Modeler holds 5 in memory; save flushes it
-    result = live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert length(tree) == "9"
-    # The snapshot is taken AFTER the save, so it holds the flushed GUI edits.
-    assert length(result["history_snapshot"]) == "5"
-    assert result["save_postcondition"]["established"] is True
-    assert result["undo_depth"] == 1
-    assert result["process_id"] == harness.PID
-    assert result["reload_effect"] == "unverifiable"
-    assert result["reload_verification_required"] is True
-    assert Path(result["screenshot"]).name.startswith("modeler_")
-    methods = gui.transport.methods()
-    assert methods.count("execute_action") == 2
-    assert gui.transport.action_keys() == ["ctrl+s", "ctrl+r"]
+    gui.arm_document(tree)  # even a fixture disk write must not unlock the edit
+    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    assert payload["error"] == "save_prerequisite_unverified"
+    assert payload["disk_mutation"] is False
+    assert payload["history_mutation"] is False
+    assert payload["save_postcondition"]["established"] is False
+    assert payload["save_postcondition"]["method"] == "none"
+    assert payload["save_postcondition"]["authority"] == "none"
+    assert payload["adapter_capability"]["save_effect_verifier"] == "NOT_AVAILABLE"
+    # External facts: only the fixture's own write is on disk, and nothing else.
+    assert length(tree) == "13", "the adapter must not edit the file to 9"
+    assert not live._history(tree).exists(), "no history may be created"
+    assert not list(live._snapshots(tree))
+    assert not list(tmp_path.glob(".live_*"))
+    assert gui.transport.action_keys() == ["ctrl+s"], "the reload is never attempted"
 
 
 def test_undo_restores_the_previous_state_and_keeps_the_backup(gui, tmp_path):
-    """The disk restore is real; the backup survives an unverified reload."""
+    """The disk restore is real; the backup survives an unverified reload.
+
+    The history snapshot is a CONTROLLED FIXTURE: production ``apply`` refuses
+    its dependent write, so no real apply produced this snapshot. This checks
+    undo's own pure-file behaviour, not that the live edit feature works.
+    """
     tree = write_tree(tmp_path / "tree.spm")
-    gui.arm_document(tree)
-    live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    snap = harness.seed_snapshot(tree, "5")
+    assert live._snapshots(tree) == [snap]
     result = live.undo(tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "the restore returns the saved, pre-edit state"
+    assert length(tree) == "5", "the restore returns the pre-edit state"
     assert result["undo_depth"] == 1, "the backup is retained while the reload is unverified"
     assert result["verification"]["status"] == "unknown"
     assert Path(result["verification"]["history_snapshot"]).is_file()
@@ -114,14 +129,14 @@ def test_apply_refuses_when_the_bound_window_shows_another_document(monkeypatch,
     assert not list(tmp_path.rglob("_live_history"))
 
 
-def test_a_failed_edit_leaves_the_file_and_history_untouched(gui, tmp_path):
+def test_a_refused_apply_never_reaches_the_edit(gui, tmp_path):
+    """The gate runs first, so not even a malformed edit can touch the file."""
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree)
-    with pytest.raises(Exception):
-        live.apply(tree, BAD_EDIT, settle_seconds=0, session=gui.session)
-    # Only the save's own flush is on disk: the failed edit never landed, and no
-    # history snapshot or staged directory survives it.
-    assert length(tree) == "5"
+    payload = payload_of(live.apply, tree, BAD_EDIT, settle_seconds=0, session=gui.session)
+    assert payload["error"] == "save_prerequisite_unverified"
+    # Only the fixture's own write is on disk; no history and no stage survive.
+    assert length(tree) == "13"
     assert not list(live._snapshots(tree))
     assert not list(tmp_path.glob(".live_*"))
 
