@@ -1,10 +1,14 @@
 """Own and drain one Modeler process tree under the core cancellation contract.
 
-A supervision object (a Windows Job Object, or a POSIX process group) is
-created before the child is spawned. Every wait is bounded by one finite
-deadline; the whole owned tree is terminated and its return is evidenced
-before the call returns or raises. A parent-only exit is never reported as a
-whole-tree success, and a tree whose return cannot be confirmed stays UNKNOWN.
+On Windows the child is created SUSPENDED, assigned to this call's Job Object
+while it cannot execute a single instruction, and only then resumed. No process
+or thread enumeration and no post-hoc subtree kill are used: the resume works
+solely on the process handle already owned by ``subprocess.Popen``. A POSIX
+child is placed in a new session before exec, which is likewise creation-time.
+Every wait is bounded by one finite deadline; the whole owned tree is terminated
+and its return is evidenced before the call returns or raises. A parent-only exit
+is never reported as a whole-tree success, and a tree whose return cannot be
+confirmed stays UNKNOWN.
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ from dcc_mcp_core.cancellation import check_cancelled
 
 _POLL_SECONDS = 0.25
 _CLEANUP_GRACE_SECONDS = 2.0
+_CREATE_SUSPENDED = 0x00000004
+_STATUS_SUCCESS = 0
 
 
 class OwnedTreeError(RuntimeError):
@@ -34,6 +40,7 @@ if os.name == "nt":
     from ctypes import wintypes
 
     _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _ntdll = ctypes.WinDLL("ntdll")
     _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
     _JobObjectExtendedLimitInformation = 9
     _JobObjectBasicAccountingInformation = 1
@@ -107,7 +114,20 @@ if os.name == "nt":
     _k32.CloseHandle.argtypes = [wintypes.HANDLE]
     _k32.CloseHandle.restype = wintypes.BOOL
 
+    # NtResumeProcess releases the whole process using only our own child's
+    # process handle. No Thread32/Snapshot enumeration, no unknown PID, no
+    # post-hoc subtree kill. If unavailable, creation is rejected (no leak).
+    try:
+        _NtResumeProcess = _ntdll.NtResumeProcess
+        _NtResumeProcess.argtypes = [wintypes.HANDLE]
+        _NtResumeProcess.restype = ctypes.c_long
+    except AttributeError:
+        _NtResumeProcess = None
+
     def _job_create():
+        # Real API contract: the KILL_ON_JOB_CLOSE flag belongs in
+        # JOBOBJECT_EXTENDED_LIMIT_INFORMATION with info class 9. Sending the
+        # basic-limit structure (or a mismatched class) yields WinError 87.
         job = _k32.CreateJobObjectW(None, None)
         if not job:
             raise ctypes.WinError(ctypes.get_last_error())
@@ -127,6 +147,15 @@ if os.name == "nt":
     def _job_assign(job, process_handle):
         if not _k32.AssignProcessToJobObject(job, wintypes.HANDLE(process_handle)):
             raise ctypes.WinError(ctypes.get_last_error())
+
+    def _job_resume(process_handle):
+        """Release the creation barrier on a child already owned by this Job."""
+        if _NtResumeProcess is None:
+            raise OSError("NtResumeProcess unavailable; refusing to resume an unowned child")
+        status = _NtResumeProcess(wintypes.HANDLE(process_handle))
+        if status != _STATUS_SUCCESS:
+            raise OSError(f"NtResumeProcess failed: NTSTATUS 0x{status & 0xFFFFFFFF:08x}")
+        return status
 
     def _job_terminate(job):
         if not _k32.TerminateJobObject(job, 1):
@@ -159,30 +188,53 @@ class _OwnedProcessTree:
         self._pgid = None
         self.assigned = False
         self.unownable_reason = None
+        # Windows: CREATE_SUSPENDED + assign + resume. POSIX: setsid() in the
+        # child before exec is itself a creation-time ownership barrier.
+        self.creation_barrier = "CREATE_SUSPENDED" if os.name == "nt" else "start_new_session"
+        self.assigned_before_resume = False if os.name == "nt" else None
+        self.resume_status = None
+        self.members_before_resume = None
 
     def popen_kwargs(self):
-        flags = (
-            subprocess.CREATE_NO_WINDOW
-            if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW")
-            else 0
-        )
-        kwargs = {"creationflags": flags}
-        if os.name != "nt":
-            kwargs["start_new_session"] = True
-        return kwargs
+        if os.name == "nt":
+            flags = _CREATE_SUSPENDED
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                flags |= subprocess.CREATE_NO_WINDOW
+            return {"creationflags": flags}
+        return {"start_new_session": True}
 
     def bind(self, process):
         if os.name == "nt":
             handle = getattr(process, "_handle", None)
             if handle is None:
                 # Unit-test fake / no OS handle: no whole-tree claim is possible.
+                # A real Popen always owns _handle; the bounded cleanup path then
+                # kills and reaps the child without ever claiming containment.
                 self.unownable_reason = "no_windows_process_handle"
                 return
+            native_handle = int(handle)  # borrowed; Popen owns and closes it
             try:
-                _job_assign(self._job, int(handle))
+                _job_assign(self._job, native_handle)
             except OSError as exc:
-                raise OwnedTreeError("Cannot own the export process tree") from exc
+                raise OwnedTreeError(
+                    "Cannot own the export process tree before its first execution"
+                ) from exc
             self.assigned = True
+            # The child is STILL SUSPENDED here. It belongs to this Job and has
+            # not executed a single instruction. Take real accounting evidence
+            # at that boundary instead of asserting a self-reported boolean.
+            try:
+                active, total = _job_accounting(self._job)
+            except OSError as exc:
+                raise OwnedTreeError("Cannot verify creation-time Job membership") from exc
+            self.members_before_resume = {"active": active, "total": total}
+            self.assigned_before_resume = True
+            if total < 1:
+                raise OwnedTreeError("Child was not in this Job before its first execution")
+            try:
+                self.resume_status = _job_resume(native_handle)
+            except OSError as exc:
+                raise OwnedTreeError("Cannot release the export process creation barrier") from exc
         else:
             pid = getattr(process, "pid", None)
             if not isinstance(pid, int):
@@ -267,21 +319,24 @@ class _OwnedProcessTree:
 def run_modeler(argv, *, cwd, stdout, timeout):
     """Run one owned Modeler process tree and return its whole-tree receipt."""
     check_cancelled()
-    tree = _OwnedProcessTree()  # supervision object created BEFORE spawn
     started = time.monotonic()
     deadline = started + timeout
     grace = min(_CLEANUP_GRACE_SECONDS, max(0.0, timeout / 2.0))
     wait_deadline = deadline - grace
+    tree = None
+    process = None
     receipt = {
-        "supervision": tree.kind,
-        "owned_before_spawn": True,
+        "supervision": "windows_job_object" if os.name == "nt" else "posix_process_group",
+        "creation_barrier": "CREATE_SUSPENDED" if os.name == "nt" else "start_new_session",
+        "job_handle_owner": "run_modeler",
+        "child_handle_owner": "subprocess.Popen",
         "fallback_on_handle_close": (
             "kill_on_job_close" if os.name == "nt" else "process_group_kill"
         ),
         "deadline_seconds": timeout,
     }
-    process = None
     try:
+        tree = _OwnedProcessTree()  # supervision object created BEFORE spawn
         process = subprocess.Popen(
             argv,
             cwd=cwd,
@@ -292,9 +347,16 @@ def run_modeler(argv, *, cwd, stdout, timeout):
             **tree.popen_kwargs(),
         )
         tree.bind(process)
-        receipt["child_pid"] = getattr(process, "pid", None)
-        receipt["child_assigned"] = tree.assigned
-        receipt["unownable_reason"] = tree.unownable_reason
+        receipt.update(
+            {
+                "child_pid": getattr(process, "pid", None),
+                "child_assigned": tree.assigned,
+                "assigned_while_suspended": tree.assigned_before_resume,
+                "job_members_before_resume": tree.members_before_resume,
+                "resume_status": tree.resume_status,
+                "unownable_reason": tree.unownable_reason,
+            }
+        )
         while True:
             check_cancelled()
             remaining = wait_deadline - time.monotonic()
@@ -322,7 +384,21 @@ def run_modeler(argv, *, cwd, stdout, timeout):
         return result
     except BaseException as exc:
         cleanup_deadline = min(deadline, time.monotonic() + grace)
-        forced = tree.terminate(process, cleanup_deadline)
+        if tree is not None:
+            forced = tree.terminate(process, cleanup_deadline)
+        else:
+            # The supervision object itself failed (e.g. a real
+            # SetInformationJobObject return-value failure). No child exists;
+            # refuse the creation with finite cleanup and truthful UNKNOWN.
+            forced = {
+                "status": "unknown",
+                "drained": False,
+                "clean_exit": False,
+                "reason": "supervision_object_not_created",
+                "active_processes": None,
+                "total_processes": None,
+                "forced_termination": False,
+            }
         receipt.update(forced)
         receipt["clean_exit"] = False
         receipt["elapsed_seconds"] = round(time.monotonic() - started, 3)
@@ -330,4 +406,5 @@ def run_modeler(argv, *, cwd, stdout, timeout):
             exc.process_tree = receipt
         raise
     finally:
-        tree.close()
+        if tree is not None:
+            tree.close()

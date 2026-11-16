@@ -141,8 +141,10 @@ def test_normal_exit_reports_drained_tree_receipt(tmp_path):
     assert receipt["status"] == "drained"
     assert receipt["drained"] is True
     assert receipt["clean_exit"] is True
-    assert receipt["owned_before_spawn"] is True
     assert receipt["child_assigned"] is True
+    assert receipt["job_handle_owner"] == "run_modeler"
+    assert receipt["child_handle_owner"] == "subprocess.Popen"
+    assert receipt["creation_barrier"] in {"CREATE_SUSPENDED", "start_new_session"}
 
 
 # 4) Parent-only exit with a lingering descendant is UNKNOWN, never success.

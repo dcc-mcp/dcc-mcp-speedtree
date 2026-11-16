@@ -27,7 +27,8 @@ _DRAINED_TREE = {
     "active_processes": 0,
     "total_processes": 1,
     "supervision": "unit_test_fake_runner",
-    "owned_before_spawn": True,
+    "creation_barrier": "unit_test_fake_runner",
+    "job_members_before_resume": {"active": 1, "total": 1},
 }
 
 
