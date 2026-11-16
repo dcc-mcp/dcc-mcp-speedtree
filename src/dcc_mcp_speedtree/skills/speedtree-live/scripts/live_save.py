@@ -12,7 +12,11 @@ def main(process_id=None, **kwargs):
         error = payload.pop("error", "live_failed")
         payload.pop("message", None)  # str(exc) already supplies the message
         return skill_error(str(exc), error, **payload)
-    return skill_success("Active Modeler document saved.", **result)
+    known = (
+        "Delivered the save command to the bound Modeler window; the file on disk was "
+        "not read back, so it is not known to have changed."
+    )
+    return skill_success(live.effect_message(result, action="save", known=known), **result)
 
 
 if __name__ == "__main__":

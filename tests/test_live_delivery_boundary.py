@@ -15,7 +15,9 @@ from live_ui_harness import length, write_tree
 
 from dcc_mcp_speedtree import live
 
-SET_LENGTH = [{"op": "set_property", "node_id": "root", "name": "Spine:Length:Absolute", "value": 9}]
+SET_LENGTH = [
+    {"op": "set_property", "node_id": "root", "name": "Spine:Length:Absolute", "value": 9}
+]
 
 
 @pytest.fixture
@@ -87,8 +89,9 @@ def test_a_delivered_but_unverified_reload_is_not_compensated(gui, tmp_path):
 
 def test_apply_refuses_a_process_id_that_is_not_the_bound_window(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    payload = payload_of(live.apply, tree, SET_LENGTH, process_id=9999, settle_seconds=0,
-                         session=gui.session)
+    payload = payload_of(
+        live.apply, tree, SET_LENGTH, process_id=9999, settle_seconds=0, session=gui.session
+    )
     assert payload["error"] == "invalid_target"
     assert length(tree) == "2"
     assert gui.transport.methods() == [], "no native read may precede the target check"

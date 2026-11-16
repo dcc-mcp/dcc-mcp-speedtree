@@ -7,7 +7,9 @@ from dcc_mcp_speedtree import live
 def main(path, process_id=None, settle_seconds=3.0, **kwargs):
     try:
         result = live.undo(
-            path, process_id, settle_seconds,
+            path,
+            process_id,
+            settle_seconds,
             session=kwargs.get(live.TRUSTED_SESSION_PARAM),
         )
     except live.LiveError as exc:
@@ -15,7 +17,11 @@ def main(path, process_id=None, settle_seconds=3.0, **kwargs):
         error = payload.pop("error", "live_failed")
         payload.pop("message", None)  # str(exc) already supplies the message
         return skill_error(str(exc), error, **payload)
-    return skill_success("Last live change undone and reloaded; read the screenshot PNG.", **result)
+    known = (
+        f"Restored {result.get('restored')} from the history snapshot over {result.get('path')} "
+        "on disk and delivered the reload command."
+    )
+    return skill_success(live.effect_message(result, action="reload", known=known), **result)
 
 
 if __name__ == "__main__":
