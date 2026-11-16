@@ -94,7 +94,7 @@ then fails with `error=unauthorized_action`.
 | `runtime_version` | startup owner | Non-empty string, the runtime version the host actually pinned. Core's client rejects a mismatch. |
 | `journal_root` | startup owner | Stable ordinary absolute directory that already exists, with **no reparse or symlink ancestor**, and **different from any recording `output_root`**. `UiControlCapturePreparationOptions.__post_init__` enforces all of this. It must **not** come from tool JSON or a business caller's ad-hoc environment. |
 | `allowed_actions` / `window_operations` | startup owner | `allowed_actions` is the bounded physical-input ceiling (`PIXEL_ACTIONS`); empty grants no input. `BoundedLiveSession` requires the client's registered actions to match it. |
-| `ui_control_menu_routes` | startup owner | `{"save": ..., "revert": ...}`, each a public physical action with its payload (for example `{"action": "keyboard_shortcut", "keys": "ctrl+s"}`). Both routes are required; an unknown action, an unknown payload field or a missing route is rejected at startup. |
+| `ui_control_menu_routes` | startup owner | `{"save": ..., "revert": ...}`, each a public physical action with its payload (for example `{"action": "keyboard_shortcut", "keys": "ctrl+s"}`). **Declaring routes is optional and neither route is required for startup.** A read-only startup (empty `allowed_actions`, no routes) still constructs the session and serves `live_status` / `live_screenshot`. An unknown action or an unknown payload field is still rejected at startup; a route that is simply absent is refused later, when that menu operation is used (`error=menu_route_undeclared`), before any physical input is sent. |
 | `ttl_minutes` | startup owner | Integer 1–60 (Core validation). |
 | `timeout_seconds` | startup owner | `0 < x <= 120` (Core validation). |
 | `session_id` | startup owner | Non-empty host-scoped string. |
@@ -146,8 +146,15 @@ then fails with `error=unauthorized_action`.
 **How the write entries work.** `live_save`, `live_revert`, `live_apply` and
 `live_undo` validate an explicit `process_id` against the bound window first,
 take a fresh native observation, deliver the operator-declared menu action as
-authorized physical input and then observe again. Delivery and effect are
-reported separately, because they are different facts:
+authorized physical input and then observe again. The input is **bounded physical
+foreground input** in the exact bound window; nothing here edits in the
+background, and there is no raw PowerShell / UI Automation / PostMessage /
+PrintWindow route. Before the first real observation or input, report the actual
+route attestation for that task: `provider=dcc-cua`, the runtime version, the
+exact PID and the exact native HWND. The connection, task and observation
+references belong to the individual owned task and are kept with it; they are not
+a single gate for a whole round and not a recipe for a new permission grant.
+Delivery and effect are reported separately, because they are different facts:
 
 - **Delivery** is a data check, not an exception check. Core's client returns a
   boolean `structuredContent` result and raises nothing for a refused action, so
@@ -156,6 +163,34 @@ reported separately, because they are different facts:
   `revert_not_confirmed` or `reload_not_confirmed`, and `live_apply` checks the
   save **before** creating history, staging an edit or touching the document. A
   transport-level rejection still surfaces as `error=menu_action_rejected`.
+- **A false completion flag is not proof that nothing was dispatched.** The
+  runtime's physical input fence accumulates `requested_events` / `inserted_events`
+  and keeps `delivery_completed` false until every dispatch, cleanup and
+  post-check passes, so a partial insertion reports false while real input
+  already reached the window. Every delivery therefore carries a `dispatch`
+  classification — `delivered`, `delivered_unverified`, `partial`,
+  `unknown_dispatch` or `not_dispatched` — and only `not_dispatched` is treated
+  as proved, which requires either an adapter-owned boundary that refused before
+  `execute` was entered or the runtime's own action-stage evidence
+  (`pre_dispatch` phase, `action_attempted` false, or `input_sent` `not_sent`,
+  with `completion` `known`, `effect_unknown` false and no contradictory
+  mutation or event count). Compensation and backup deletion are gated on that
+  proof; every uncertain state preserves the file and the only backup.
+- **`live_apply` refuses its dependent phase on this route.** The entry requires
+  a source-bound save confirmation — a project-route acknowledgement with
+  explicit application semantics, correct process/document binding and
+  verifiable provenance proving that the bound Modeler saved its current GUI
+  edits into **this** document. The implemented pixels-only client reports the
+  save effect as `unverifiable` and exposes no such confirmation, so `live_apply`
+  returns `error=save_prerequisite_unverified` with `disk_mutation: false` and
+  `history_mutation: false`, **before** the business-file edit, the history
+  snapshot and the reload — even when the file's mtime or its content hash
+  changed. A file observation is still reported, as a diagnostic with
+  `authority: "none"`: it shows that the disk changed, not that the bound
+  Modeler saved into that document. No automatic retry, and no synthesized
+  acknowledgement. This is a reported adapter capability gap
+  (`save_effect_verifier: NOT_AVAILABLE`), not full real-time co-design
+  acceptance and not a statement that the public protocol lacks the ability.
 - **Effect** stays unverified. The runtime reports every delivered physical
   action's `effect` as `unverifiable`, and the only same-task observations
   available are native pixels and window state — neither proves the Modeler
@@ -192,7 +227,13 @@ atomic rename per commit, a private staging directory per call, a structured
 receipt with `file_restored` / `history_retained` / `gui_state` when a reload is
 not delivered (including disk compensation and keeping the sole backup when
 compensation itself fails), and a screenshot failure reported as
-`screenshot_error` without rolling the commit back.
+`screenshot_error` without rolling the commit back. For `apply` those guarantees
+apply to the phase that now runs only once a source-bound save confirmation
+exists; on the implemented pixels-only route the entry stops before that phase,
+so no disk compensation or history write is exercised there. `undo` reaches its
+own restore and reload from a snapshot that already exists — recovery material or
+a route that could run `apply` — and never consumes that snapshot on an
+unverified reload.
 
 ## 4. Precise remaining Core extension point
 
