@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 
 CHECK = r"""
@@ -21,7 +22,7 @@ skills = package / "skills"
 assert (skills / "speedtree-official/metadata/depends.md").is_file()
 expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0, "speedtree-nodes": 5,
             "speedtree-live": 7}
-assert (package / "live.ps1").is_file()
+assert not (package / "live.ps1").exists(), "raw UI bridge must not be installed"
 exe = root / "SpeedTree_Modeler.exe"
 exe.write_bytes(b"not executable; metadata-only fixture")
 server = SpeedTreeMcpServer(executable=str(exe), enable_gateway_failover=False,
@@ -57,8 +58,11 @@ try:
     assert node_result["success"], node_result
     assert node_result["context"]["graph"]["generators"][0]["name"] == "Verified tree"
     assert node_result["context"]["source_modified"] is False
+    live_status = runpy.run_path(str(skills / "speedtree-live/scripts/live_status.py"))["main"]()
+    assert live_status["success"] is False and live_status["error"] == "no_authorized_ui_route", live_status
     print(json.dumps({"wheel_import": True, "discovered_and_loaded": expected,
-                      "capability_entry_point": "passed", "node_entry_point": "passed", "host_probe": False}))
+                      "capability_entry_point": "passed", "node_entry_point": "passed",
+                      "live_entry_point": "no_authorized_ui_route", "host_probe": False}))
 finally:
     server.stop()
 """
@@ -68,6 +72,17 @@ def main():
     wheel = Path(sys.argv[1]).resolve(strict=True)
     archives = list(wheel.parent.glob("*.tar.gz"))
     assert len(archives) == 1, "Build the sdist and wheel into the same output directory"
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+        assert not any(name.endswith("live.ps1") for name in names), (
+            "raw UI bridge must not be packaged"
+        )
+        for relative in (
+            "dcc_mcp_speedtree/skills/speedtree-live/tools.yaml",
+            "dcc_mcp_speedtree/skills/speedtree-live/SKILL.md",
+            "dcc_mcp_speedtree/skills/speedtree-live/scripts/live_status.py",
+        ):
+            assert any(name.endswith(relative) for name in names), relative
     with tarfile.open(archives[0]) as archive:
         names = archive.getnames()
         for relative in (

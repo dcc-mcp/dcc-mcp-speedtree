@@ -95,16 +95,27 @@ material dependency stops the batch and preserves a partial manifest.
 ## Live co-design (Windows)
 
 The `speedtree-live` skill lets an agent edit the tree that a user is watching
-in a running Modeler, without moving the user's mouse or keyboard. The Modeler
-has no scripting API, so `live_apply` works through the open file: it saves the
-active document, copies it into `_live_history/<name>/`, applies `edit_graph`
-operations in place, reloads with File > Revert to saved and returns a
-background `PrintWindow` screenshot. `live_undo` restores the previous copy.
-`live_status`, `live_open` (File > Recents), `live_save`, `live_revert` and
-`live_screenshot` are also available. Menus are driven through Windows UI
-Automation from short-lived child processes; dialogs are answered only by keys
-posted to the dialog window (Enter for the revert warning, Escape otherwise).
-The target must be the active document and the window must not be minimised.
+in a running Modeler. The Modeler has no scripting API, so `live_apply` works
+through the open file: it saves the active document, copies it into
+`_live_history/<name>/`, applies `edit_graph` operations in place, reloads with
+File > Revert to saved and returns a fresh native screenshot. `live_undo`
+restores the previous copy. `live_status`, `live_save`, `live_revert` and
+`live_screenshot` are also available.
+
+All observation and input go through the project's dcc-cua / DCC-MCP
+`ui-control` route: one owned, integrity-pinned runtime task bound to an exact
+PID and window handle, with a bounded action ceiling. Without that trusted
+server-owned session every entry fails closed with
+`error=no_authorized_ui_route`. `live_open` is not available on this route — the
+owned task cannot target the file dialog and `pixels_only` cannot read the menu
+— so open the document with dcc-cua / DCC-MCP `ui-control` first.
+
+Two things are deliberately not claimed. Physical menu actions are delivered
+through the authorized runtime, which reports their `effect` as `unverifiable`;
+the adapter propagates that instead of asserting success. The active document is
+read from the bound window title and is reported as unverified; a modal dialog
+cannot be observed in `pixels_only` mode. See
+[docs/ui-control-bootstrap.md](docs/ui-control-bootstrap.md).
 
 ## Unreal
 
