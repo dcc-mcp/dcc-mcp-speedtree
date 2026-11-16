@@ -14,7 +14,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_screenshot
-  description: Capture the Modeler window in the background (also when covered) and return the PNG path.
+  description: Capture the exact bound Modeler window through the owned dcc-cua / DCC-MCP ui-control route and return the fresh native PNG path. Not a background capture; the window must be the bound PID/HWND.
   source_file: scripts/live_screenshot.py
   execution: sync
   affinity: any
@@ -30,7 +30,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_open
-  description: Make a file the active Modeler document through File > Recents (no file dialog).
+  description: Refused on the implemented pixels-only route with error=open_recent_unsupported_on_pixels_only_route. That route exposes no element targeting, so a File > Recents entry cannot be located or activated. An adapter capability gap, not a statement about the public protocol. Open the document with dcc-cua / DCC-MCP ui-control first.
   source_file: scripts/live_open.py
   execution: sync
   affinity: any
@@ -46,7 +46,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_save
-  description: Save the active Modeler document (File > Save).
+  description: Deliver the configured save command to the bound Modeler window and report the delivery. The application effect is reported UNVERIFIED/UNKNOWN; this is not a confirmation that the document was saved.
   source_file: scripts/live_save.py
   execution: sync
   affinity: any
@@ -60,7 +60,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_revert
-  description: Reload the active Modeler document from disk (File > Revert to saved, confirmed) and screenshot it. Unsaved GUI edits are lost.
+  description: Deliver the configured File > Revert to saved command to the bound Modeler window and capture it. The reload effect is reported UNVERIFIED/UNKNOWN; unsaved GUI edits may be lost and no reload is claimed.
   source_file: scripts/live_revert.py
   execution: sync
   affinity: any
@@ -75,7 +75,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_apply
-  description: Save the active Modeler document, keep a history copy, apply edit_graph operations in place, reload it in the Modeler and return a screenshot path.
+  description: On the implemented pixels-only adapter this returns error=save_prerequisite_unverified BEFORE any dependent business-file edit, history snapshot or reload, because no formal process/document-bound save confirmation exists there, even when the file mtime or content hash changes. Not full real-time co-design acceptance; the edit and reload path runs only on a route that provides such a confirmation.
   source_file: scripts/live_apply.py
   execution: sync
   affinity: any
@@ -97,7 +97,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_undo
-  description: Restore the file as it was before the last live_apply, reload it in the Modeler and return a screenshot path.
+  description: Restore the file on disk from the newest history snapshot and deliver the reload command. The disk restore is real and reported; the history snapshot is kept until a supported reload confirmation exists, and the reload effect stays UNVERIFIED. No claim that the Modeler shows the restored state.
   source_file: scripts/live_undo.py
   execution: sync
   affinity: any
