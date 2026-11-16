@@ -19,7 +19,9 @@ from live_ui_harness import REVERT_ROUTE, SAVE_ROUTE, length, write_tree
 from dcc_mcp_speedtree import live
 from dcc_mcp_speedtree.trusted_session import BoundedLiveSession, TrustedLiveExecutionBridge
 
-SET_LENGTH = [{"op": "set_property", "node_id": "root", "name": "Spine:Length:Absolute", "value": 9}]
+SET_LENGTH = [
+    {"op": "set_property", "node_id": "root", "name": "Spine:Length:Absolute", "value": 9}
+]
 SRC = Path(live.__file__).resolve().parent
 
 
@@ -47,9 +49,13 @@ def _code_strings(module):
                 collect_docstrings(child)
 
     collect_docstrings(tree)
-    return [node.value for node in ast.walk(tree)
-            if isinstance(node, ast.Constant) and isinstance(node.value, str)
-            and node.value not in documented]
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value not in documented
+    ]
 
 
 def test_live_module_has_no_raw_powershell_route():
@@ -90,18 +96,27 @@ def test_bridge_injects_only_for_published_entries_and_strips_trusted_params(mon
     entry = harness.published_live_entry("live_apply.py")
 
     injected = harness.core_executor_calls(
-        monkeypatch, bridge, entry, action_name="speedtree_live__live_apply",
+        monkeypatch,
+        bridge,
+        entry,
+        action_name="speedtree_live__live_apply",
     )
     assert injected["params"].get(live.TRUSTED_SESSION_PARAM) is session
 
     foreign = str(Path(entry).parent / "foreign_live_apply.py")
     not_injected = harness.core_executor_calls(
-        monkeypatch, bridge, foreign, action_name="speedtree_live__live_apply",
+        monkeypatch,
+        bridge,
+        foreign,
+        action_name="speedtree_live__live_apply",
     )
     assert live.TRUSTED_SESSION_PARAM not in not_injected["params"]
 
     forged = harness.core_executor_calls(
-        monkeypatch, bridge, entry, action_name="speedtree_live__live_apply",
+        monkeypatch,
+        bridge,
+        entry,
+        action_name="speedtree_live__live_apply",
         params={live.TRUSTED_SESSION_PARAM: "forged", "trusted_other": "x"},
     )
     assert live.TRUSTED_SESSION_PARAM in forged["params"]
@@ -124,17 +139,22 @@ def test_menu_actions_require_runtime_authorization(monkeypatch, tmp_path):
     assert read_only.transport.methods().count("execute_action") == 0
 
 
-def test_incomplete_menu_routes_are_refused(monkeypatch):
-    with pytest.raises(live.LiveError) as raised:
-        harness.Harness(monkeypatch, menu_routes={"save": SAVE_ROUTE})
-    assert raised.value.payload["error"] == "menu_routes_incomplete"
-    assert raised.value.payload["missing_routes"] == ["revert"]
+def test_mutating_menu_is_refused_at_menu_time_when_undeclared(monkeypatch, tmp_path):
+    """Declaring a write route is optional; using one that is absent is refused."""
+    monkeypatch.setattr(live, "SHOT_DIR", tmp_path / "shots")
+    partial = harness.Harness(monkeypatch, menu_routes={"save": SAVE_ROUTE})
+    assert partial.session.status()["capabilities"]["menu_routes"] == ["save"]
+    payload = payload_of(live.revert, session=partial.session)
+    assert payload["error"] == "menu_route_undeclared"
+    assert payload["declared_routes"] == ["save"]
+    assert "execute_action" not in partial.transport.methods(), "no physical action"
 
 
 def test_invalid_menu_routes_are_refused(monkeypatch):
     with pytest.raises(live.LiveError) as raised:
-        harness.Harness(monkeypatch, menu_routes={"save": {"action": "invoke_menu"},
-                                                  "revert": REVERT_ROUTE})
+        harness.Harness(
+            monkeypatch, menu_routes={"save": {"action": "invoke_menu"}, "revert": REVERT_ROUTE}
+        )
     assert raised.value.payload["error"] == "invalid_menu_routes"
 
 
@@ -146,8 +166,9 @@ def test_open_recent_states_the_missing_contract_precisely(gui, tmp_path):
     assert len(payload["missing_contract"]) >= 3
     assert len(payload["evidence"]) >= 4
     # The earlier "file-dialog HWND" claim was wrong and is explicitly disclaimed.
-    assert any("not inherently require a different file-dialog" in item
-               for item in payload["not_claimed"])
+    assert any(
+        "not inherently require a different file-dialog" in item for item in payload["not_claimed"]
+    )
     assert any("transport is not the limit" in item for item in payload["evidence"])
     assert not list(tmp_path.rglob("_live_history"))
 
@@ -171,27 +192,50 @@ def test_a_failed_connection_cleanup_is_retained(gui):
     assert errors[0].native_evidence["cleanup_status"] == "cleanup_failed"
 
 
-def test_apply_reload_failure_compensates_and_reports_truthfully(gui, tmp_path):
+def test_apply_known_non_dispatch_reload_failure_compensates_and_reports_truthfully(gui, tmp_path):
+    """Control: only a positively known non-dispatch may roll the edit back."""
     tree = write_tree(tmp_path / "tree.spm")
-    gui.transport.fail_action_matching = {"keys": "ctrl+r"}
+    gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "not_dispatched"}
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     assert length(tree) == "2", "the user's saved file must be restored"
     assert not list(live._snapshots(tree))
     assert payload["phase"] == "reload"
+    assert payload["dispatch"] == "not_dispatched"
     assert payload["file_restored"] is True
     assert payload["history_retained"] is False
     assert payload["history_snapshot"] is None
     assert payload["gui_state"] == "unknown"
-    assert "menu_action_rejected" in payload["error"]
+    assert payload["error"] == "reload_not_confirmed"
     assert payload["retry"]
+    json.dumps(payload)
+
+
+def test_apply_unclassified_dispatch_error_preserves_mutation_and_backup(gui, tmp_path):
+    """A dispatch error the runtime cannot classify is not a known failure."""
+    tree = write_tree(tmp_path / "tree.spm")
+    gui.transport.fail_action_matching = {"keys": "ctrl+r"}
+    payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
+    assert length(tree) == "9", "the edit stays on disk; the reload may have run"
+    snapshots = list(live._snapshots(tree))
+    assert len(snapshots) == 1, "the only backup must survive"
+    assert payload["error"] == "reload_effect_unknown"
+    assert payload["dispatch"] == "unknown_dispatch"
+    assert payload["file_restored"] is False
+    assert payload["history_retained"] is True
+    assert payload["history_snapshot"] == str(snapshots[0])
+    assert payload["gui_state"] == "unknown"
+    assert payload["native_error"]["type"] == "OwnedCuaMcpError"
+    assert payload["recovery"]["restore_with"] == "live_undo"
+    assert "compensation_error" not in payload, "no blind compensation may be attempted"
     json.dumps(payload)
 
 
 def test_apply_compensation_failure_keeps_the_only_backup(gui, tmp_path, monkeypatch):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.transport.fail_action_matching = {"keys": "ctrl+r"}
-    monkeypatch.setattr(live, "_replace",
-                        lambda src, snap: (_ for _ in ()).throw(OSError("disk full")))
+    gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "not_dispatched"}
+    monkeypatch.setattr(
+        live, "_replace", lambda src, snap: (_ for _ in ()).throw(OSError("disk full"))
+    )
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     snapshots = list(live._snapshots(tree))
     assert len(snapshots) == 1, "the only backup must survive"

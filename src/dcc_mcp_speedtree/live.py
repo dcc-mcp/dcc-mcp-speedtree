@@ -50,6 +50,20 @@ it. A fresh screenshot after the action is observation, not effect
 verification. Nothing here sets ``effect = "verified"`` and no self-reported
 flag, grant or environment switch is introduced.
 
+Compensation is gated on what is positively KNOWN, not on the absence of
+success. Every delivery carries a ``dispatch`` classification --
+``delivered``, ``not_dispatched``, ``delivered_unverified`` or
+``unknown_dispatch``. ``apply`` rolls the edit back only for
+``not_dispatched``, the one state that proves nothing reached the window; a
+dispatched-but-unvalidated reload, a timeout or an unclassified transport error
+keeps BOTH the edit on disk and the only history snapshot and is reported as
+``reload_effect_unknown``, because the Modeler may already have executed it and
+a blind rollback would destroy the user's own edit and only recovery copy.
+Classification never comes from a self-reported flag: it is derived from Core's
+structured ``delivery_completed`` / ``post_dispatch_validated`` result and, for
+an exception, from the preserved structured native evidence, which is why
+``menu()`` propagates ``native_error`` instead of flattening it into a message.
+
 These are limited guarantees: after a reload that was not delivered the Modeler
 GUI state is UNKNOWN; ``undo`` restores the file on disk and delivers the
 reload but keeps the only history snapshot instead of spending it on an
@@ -64,6 +78,7 @@ import os
 import shutil
 import tempfile
 import time
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
@@ -143,10 +158,15 @@ def _delivery_confirmed(result):
 
 
 def _delivery_failure(phase, result):
-    """Truthful payload for an action that was never confirmed delivered."""
+    """Truthful payload for an action that was never confirmed delivered.
+
+    The ``dispatch`` classification is carried through so a caller can tell a
+    positively known non-dispatch from a dispatched-but-unvalidated one.
+    """
     payload = {
         "error": f"{phase}_not_confirmed",
         "phase": phase,
+        "dispatch": result.get("dispatch"),
         "success": result.get("success"),
         "delivery_completed": result.get("delivery_completed"),
         "post_dispatch_validated": result.get("post_dispatch_validated"),
@@ -162,14 +182,87 @@ def _delivery_failure(phase, result):
     return LiveError(payload)
 
 
+def _dispatch_known_failed(exc):
+    """Whether a failure is positively known never to have reached the window.
+
+    Only a structured ``delivery_completed: false`` result qualifies. An
+    exception -- timeout, transport error, rejected call -- never does: it
+    cannot prove the command was not executed, so it must not license a
+    compensating restore.
+    """
+    payload = getattr(exc, "payload", None)
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("dispatch") == "not_dispatched"
+
+
+def _unknown_reload_error(exc, history_snapshot, staged_retained=None):
+    """Preserve the mutation and the backup for a reload that may have happened.
+
+    A dispatched-but-unvalidated or unclassified dispatch is NOT a known
+    failure: the Modeler may already have executed the reload. Rolling the file
+    back would undo an edit the user may be looking at, and deleting the only
+    snapshot would discard recoverability, so both are preserved and the
+    uncertainty is reported instead of being resolved by assumption.
+    """
+    payload = getattr(exc, "payload", None) if isinstance(exc, LiveError) else None
+    structured = payload if isinstance(payload, dict) else {}
+    error = {
+        "error": "reload_effect_unknown",
+        "phase": "reload",
+        "dispatch": structured.get("dispatch") or "unknown_dispatch",
+        "file_restored": False,
+        "history_retained": True,
+        "history_snapshot": str(history_snapshot),
+        "gui_state": "unknown",
+        "original_error": _error_detail(exc),
+        "recovery": {"history_snapshot": str(history_snapshot), "restore_with": "live_undo"},
+        "message": (
+            "The edit is on disk and the reload was dispatched, but the result could "
+            "not be validated, so the Modeler may already have executed it. The file "
+            "and the history snapshot are both preserved: inspect the Modeler and use "
+            "live_undo to restore if the reload did not take effect."
+        ),
+    }
+    if "native_error" in structured:
+        error["native_error"] = structured["native_error"]
+    if staged_retained:
+        error["staged_retained"] = list(staged_retained)
+    return LiveError(error)
+
+
 def _reload_view(reload):
     """Delivery/effect view of one reload, without claiming the effect."""
     return {
+        "dispatch": reload.get("dispatch"),
         "delivered": _delivery_confirmed(reload),
         "effect": reload.get("effect", "unverifiable"),
         "verification_required": reload.get("verification_required", True),
         "verification": reload.get("verification"),
     }
+
+
+def effect_message(result, *, action, known):
+    """Caller-facing summary that never asserts an unverified effect.
+
+    Disk state and command delivery are known; the application effect is not.
+    The message states exactly that, names the retained backup when there is
+    one, and never claims the Modeler applied the change.
+    """
+    verification = result.get("verification") if isinstance(result, Mapping) else None
+    status = verification.get("status") if isinstance(verification, Mapping) else None
+    parts = [known]
+    if status == "confirmed":
+        parts.append(f"The Modeler {action} is confirmed.")
+    else:
+        parts.append(
+            f"The Modeler {action} effect is UNVERIFIED: the command was delivered, but "
+            "no same-task observation proves the Modeler applied it. Confirm the open "
+            "document before relying on this result."
+        )
+        if isinstance(verification, Mapping) and verification.get("history_retained"):
+            parts.append("The history snapshot is retained, so live_undo can still restore it.")
+    return " ".join(parts)
 
 
 def _pending_verification(history_snapshot, history_retained, note):
@@ -250,9 +343,17 @@ def _error_detail(exc):
     return f"{type(exc).__name__}: {exc}"
 
 
-def _transaction_error(exc, *, phase, file_restored, history_snapshot,
-                       history_retained, compensation_error=None, retry=None,
-                       staged_retained=None):
+def _transaction_error(
+    exc,
+    *,
+    phase,
+    file_restored,
+    history_snapshot,
+    history_retained,
+    compensation_error=None,
+    retry=None,
+    staged_retained=None,
+):
     """Build a truthful structured failure for a file transaction.
 
     The original failure is preserved in ``original_error`` and chained as the
@@ -273,12 +374,15 @@ def _transaction_error(exc, *, phase, file_restored, history_snapshot,
             "Inspect the open document before any further write."
         ),
         "phase": phase,
+        "dispatch": (exc.payload.get("dispatch") if isinstance(exc, LiveError) else None),
         "original_error": _error_detail(exc),
         "file_restored": file_restored,
         "history_retained": history_retained,
         "history_snapshot": str(history_snapshot) if history_retained else None,
         "gui_state": "unknown",
     }
+    if isinstance(exc, LiveError) and "native_error" in exc.payload:
+        payload["native_error"] = exc.payload["native_error"]
     if compensation_error is not None:
         payload["compensation_error"] = _error_detail(compensation_error)
     if staged_retained:
@@ -312,7 +416,9 @@ def _require_active(bounded, src: Path):
     state = bounded.status()
     instances = state.get("instances") or []
     if not instances:
-        raise LiveError({"error": "not_running", "message": "No bound SpeedTree Modeler window found"})
+        raise LiveError(
+            {"error": "not_running", "message": "No bound SpeedTree Modeler window found"}
+        )
     target = instances[0]
     active = _document_from_title(target.get("window_title"))
     if not active:
@@ -496,7 +602,10 @@ def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None
         # snapshot and the owned stage residue by their real, separate paths.
         retained, cleanup_error = _cleanup_staged(tmp, stage_dir, snap)
         raise _transaction_error(
-            exc, phase="replace", file_restored=True, history_snapshot=snap,
+            exc,
+            phase="replace",
+            file_restored=True,
+            history_snapshot=snap,
             history_retained=str(snap) in retained,
             staged_retained=[p for p in retained if p != str(snap)],
             compensation_error=cleanup_error,
@@ -507,21 +616,34 @@ def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None
         reload, observed, shot_error = _reload_and_observe(bounded, settle_seconds)
     except Exception as exc:
         # The file was replaced but the Modeler did not confirm the reload.
-        # Restore the user's saved file; keep the snapshot ONLY if that fails.
+        # Compensate ONLY for a positively known non-dispatch: when nothing
+        # reached the window the edit is still ours to undo. A dispatch that
+        # happened but could not be validated, or an unclassified dispatch
+        # error, may already have been executed, so rolling the file back
+        # would undo an edit the user may be looking at and spending the only
+        # snapshot would discard recoverability. Both are preserved instead.
+        if not _dispatch_known_failed(exc):
+            raise _unknown_reload_error(exc, snap, staged_retained=stage_residue) from exc
         try:
             _replace(src, snap)
         except Exception as compensation_error:
             raise _transaction_error(
-                exc, phase="reload", file_restored=False,
-                history_snapshot=snap, history_retained=True,
+                exc,
+                phase="reload",
+                file_restored=False,
+                history_snapshot=snap,
+                history_retained=True,
                 staged_retained=stage_residue,
                 compensation_error=compensation_error,
                 retry="Restore the file from the retained snapshot before retrying.",
             ) from exc
         retained, cleanup_error = _cleanup_staged(snap)
         raise _transaction_error(
-            exc, phase="reload", file_restored=True,
-            history_snapshot=snap, history_retained=str(snap) in retained,
+            exc,
+            phase="reload",
+            file_restored=True,
+            history_snapshot=snap,
+            history_retained=str(snap) in retained,
             staged_retained=stage_residue,
             compensation_error=cleanup_error,
             retry="Retry apply once the Modeler can reload the document.",
@@ -568,7 +690,10 @@ def undo(path, process_id=None, settle_seconds=3.0, *, session=None):
         _replace(src, snap)
     except Exception as exc:
         raise _transaction_error(
-            exc, phase="replace", file_restored=False, history_snapshot=snap,
+            exc,
+            phase="replace",
+            file_restored=False,
+            history_snapshot=snap,
             history_retained=True,
             retry="Resolve the file restore error, then retry undo.",
         ) from exc
@@ -578,7 +703,10 @@ def undo(path, process_id=None, settle_seconds=3.0, *, session=None):
         # The disk file is already the restored (pre-apply) state, but the
         # Modeler did not reload. Keep the snapshot so undo stays retryable.
         raise _transaction_error(
-            exc, phase="reload", file_restored=True, history_snapshot=snap,
+            exc,
+            phase="reload",
+            file_restored=True,
+            history_snapshot=snap,
             history_retained=True,
             retry="Retry undo to reload the already-restored file.",
         ) from exc
