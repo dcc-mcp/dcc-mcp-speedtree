@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import struct
 import zlib
+from pathlib import Path
 from typing import Any
 
 from dcc_mcp_core.host.cua_mcp_client import PixelsMcpHostClient
@@ -118,8 +119,17 @@ class ScriptedTransport:
         # Per-action delivery outcome, keyed by the declared keys/text:
         # "confirmed" (all true), "not_dispatched" (never sent),
         # "post_invalidated" (dispatched, post-dispatch validation failed),
-        # "transport_error" (raised during dispatch, dispatch state unknown).
+        # "partial" (fewer inserted than requested events; completion stays
+        # false while real input reached the window),
+        # "transport_error" (raised during dispatch, dispatch state unknown),
+        # "pre_dispatch_refusal" (runtime evidence: pre_dispatch phase, no
+        # action attempted, input not sent, completion known).
         self.action_outcomes: dict[str, str] = {}
+        # The Modeler's in-memory document, so a delivered save can be observed
+        # to actually change the file the adapter is about to edit.
+        self.document_path: Path | None = None
+        self.pending_value = "5"
+        self.flush_on_save = True
 
     def _context(self) -> dict:
         return {
@@ -241,31 +251,58 @@ class ScriptedTransport:
                     raise OwnedCuaMcpError("scripted_rejection", f"scripted {value} failure", {})
             outcome = self.action_outcomes.get(
                 action.get("keys") or action.get("text"),
-                "confirmed" if self.delivery_success else "not_dispatched",
+                "confirmed" if self.delivery_success else "partial",
             )
             if outcome == "transport_error":
                 raise OwnedCuaMcpError(
                     "scripted_transport_error", "scripted transport error during dispatch", {}
                 )
+            if outcome == "pre_dispatch_refusal":
+                # The runtime's own affirmative no-dispatch evidence.
+                raise OwnedCuaMcpError(
+                    "scripted_pre_dispatch_refusal",
+                    "scripted refusal before dispatch",
+                    {
+                        "details": {
+                            "phase": "pre_dispatch",
+                            "action_attempted": False,
+                            "input_sent": "not_sent",
+                            "completion": "known",
+                            "effect_unknown": False,
+                        }
+                    },
+                )
             success = outcome == "confirmed"
             delivered = outcome in ("confirmed", "post_invalidated")
             post = outcome == "confirmed"
-            return {
-                **base,
-                "type": "action_completed",
+            result: dict[str, Any] = {
                 "success": success,
-                "result": {
-                    "success": success,
-                    "route": "windows_exact_pixel_final_input",
-                    "native_instance": dict(NATIVE_INSTANCE),
-                    "effect": "unverifiable",
-                    "verification_required": True,
-                    "fresh_observation_required": True,
-                    "target": self._target(),
-                    "delivery": {"delivery_completed": delivered, "post_dispatch_validated": post},
-                },
+                "route": "windows_exact_pixel_final_input",
+                "native_instance": dict(NATIVE_INSTANCE),
+                "effect": "unverifiable",
+                "verification_required": True,
+                "fresh_observation_required": True,
+                "target": self._target(),
+                "delivery": {"delivery_completed": delivered, "post_dispatch_validated": post},
             }
+            if outcome == "partial":
+                # The physical input fence keeps delivery_completed false for a
+                # partial insertion, while real input already reached the window.
+                result["delivery"].update(
+                    {"requested_events": 2, "inserted_events": 1, "mutation_attempted": True}
+                )
+            if delivered and self._is_save(action):
+                self._flush_document()
+            return {**base, "type": "action_completed", "success": success, "result": result}
         raise AssertionError(f"unexpected method {method}")
+
+    def _is_save(self, action: dict) -> bool:
+        return (action.get("keys") or action.get("text")) == SAVE_ROUTE["keys"]
+
+    def _flush_document(self) -> None:
+        """Model a real File > Save: the in-memory document is written to disk."""
+        if self.flush_on_save and self.document_path is not None:
+            write_tree(self.document_path, self.pending_value)
 
     @staticmethod
     def _provenance() -> dict:
@@ -337,6 +374,19 @@ class Harness:
             target={"process_id": PID, "window_handle": HWND},
             menu_routes=MENU_ROUTES if menu_routes is None else menu_routes,
         )
+
+    def arm_document(self, path, pending: str = "5"):
+        """Model the Modeler holding ``pending`` in memory for ``path`` on disk.
+
+        A delivered save then really writes that value into the file, so the
+        adapter's same-task save observation has something to observe. Without
+        this the save is a scripted no-op and the prerequisite stays unproven,
+        which is exactly the refusal case.
+        """
+        self.transport.document_path = Path(path)
+        self.transport.pending_value = pending
+        self.transport.flush_on_save = True
+        return self
 
 
 def bridge_with_session(session: Any) -> TrustedLiveExecutionBridge:

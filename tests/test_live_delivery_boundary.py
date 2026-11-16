@@ -36,10 +36,11 @@ def payload_of(fn, *args, **kwargs):
 
 def test_apply_refuses_when_the_save_delivery_is_not_completed(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    gui.transport.delivery_success = False
+    gui.transport.delivery_success = False  # a bare false flag, i.e. a partial
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     assert payload["error"] == "save_not_confirmed"
     assert payload["delivery_completed"] is False
+    assert payload["dispatch"] == "partial", "a false flag is not a proved non-dispatch"
     assert length(tree) == "2", "no edit may be written on an unconfirmed save"
     assert not live._history(tree).exists(), "no history may be created"
     assert not list(tmp_path.glob(".live_*"))
@@ -50,10 +51,12 @@ def test_revert_refuses_an_unconfirmed_delivery(gui):
     payload = payload_of(live.revert, settle_seconds=0, shot=False, session=gui.session)
     assert payload["error"] == "revert_not_confirmed"
     assert payload["delivery_completed"] is False
+    assert payload["dispatch"] == "partial"
 
 
 def test_apply_reports_the_reload_as_unverified_and_keeps_the_history(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     result = live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     verification = result.get("verification")
     assert verification, "a delivered-but-unverifiable reload must be reported"
@@ -67,12 +70,13 @@ def test_apply_reports_the_reload_as_unverified_and_keeps_the_history(gui, tmp_p
 
 def test_undo_keeps_the_only_snapshot_when_the_reload_is_unverified(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     snapshots = list(live._snapshots(tree))
     assert len(snapshots) == 1
     result = live.undo(tree, settle_seconds=0, session=gui.session)
     assert snapshots[0].is_file(), "the only backup must survive an unverified reload"
-    assert length(tree) == "2", "the disk restore itself is real"
+    assert length(tree) == "5", "the disk restore itself is real"
     assert result["verification"]["history_retained"] is True
     assert result["undo_depth"] == 1, "retained history is still undoable"
     assert result["verification"]["status"] in {"unknown", "pending"}
@@ -81,6 +85,7 @@ def test_undo_keeps_the_only_snapshot_when_the_reload_is_unverified(gui, tmp_pat
 def test_a_delivered_but_unverified_reload_is_not_compensated(gui, tmp_path):
     """Compensation would undo an edit the Modeler may already have loaded."""
     tree = write_tree(tmp_path / "tree.spm")
+    gui.arm_document(tree)
     result = live.apply(tree, SET_LENGTH, settle_seconds=0, session=gui.session)
     assert length(tree) == "9", "an unverified reload must not silently revert the edit"
     assert result["verification"]["status"] in {"unknown", "pending"}

@@ -282,14 +282,100 @@ def delivery_confirmed(result: Any) -> bool:
     return classify_delivery(result) == DISPATCH_DELIVERED
 
 
-# Dispatch classification. "not_dispatched" is the ONLY state in which the
-# command is positively known never to have reached the window; in every other
-# non-confirmed state it may already have been executed, so recovery material
-# must be preserved rather than spent on a blind compensating restore.
+# Dispatch classification. A false completion flag is NOT affirmative evidence
+# that nothing was sent: the runtime's physical input fence accumulates
+# requested/inserted events and keeps ``delivery_completed`` false until every
+# dispatch, cleanup and post-check has passed, so a partial insertion reports
+# false while real input already reached the window. Only ``not_dispatched``
+# proves zero input, and it requires affirmative action-stage evidence -- never
+# a transport label and never an inference from false booleans. Every other
+# non-confirmed state may already have been executed, so recovery material must
+# be preserved instead of being spent on a blind compensating restore.
 DISPATCH_DELIVERED = "delivered"
 DISPATCH_NOT_DISPATCHED = "not_dispatched"
 DISPATCH_DELIVERED_UNVERIFIED = "delivered_unverified"
+DISPATCH_PARTIAL = "partial"
 DISPATCH_UNKNOWN = "unknown_dispatch"
+
+# Affirmative action-stage evidence from the runtime's own typed error details
+# (``ComputerUseErrorDetails``), serialised snake_case: pre-dispatch phase, no
+# action attempted, or no input sent -- with completion KNOWN and the effect
+# explicitly NOT unknown, and no contradictory mutation or event count.
+_NO_DISPATCH_PHASES = frozenset({"pre_dispatch"})
+_NO_DISPATCH_INPUT = frozenset({"not_sent"})
+_POSSIBLE_INPUT = frozenset({"sent", "unknown"})
+_CONTRADICTORY_MUTATIONS = ("mutation_attempted", "focus_mutation_attempted")
+_EVIDENCE_KEYS = ("delivery", "native_outcome", "details", "native_evidence", "native_error")
+
+
+def _evidence_views(result: Any) -> list[Mapping]:
+    """Every bounded place a result may carry runtime action-stage evidence."""
+    if not isinstance(result, Mapping):
+        return []
+    views: list[Mapping] = [result]
+    for key in _EVIDENCE_KEYS:
+        nested = result.get(key)
+        if isinstance(nested, Mapping):
+            views.append(nested)
+            for inner in _EVIDENCE_KEYS:
+                deep = nested.get(inner)
+                if isinstance(deep, Mapping):
+                    views.append(deep)
+    return views
+
+
+def _evidence(views: list[Mapping], key: str) -> Any:
+    for view in views:
+        if key in view:
+            return view[key]
+    return None
+
+
+def _affirmative_no_dispatch(views: list[Mapping]) -> bool:
+    """Whether the runtime affirmatively reports that no input was dispatched."""
+    phase = _evidence(views, "phase")
+    attempted = _evidence(views, "action_attempted")
+    input_sent = _evidence(views, "input_sent")
+    affirmative = (
+        (isinstance(phase, str) and phase.lower() in _NO_DISPATCH_PHASES)
+        or attempted is False
+        or (isinstance(input_sent, str) and input_sent.lower() in _NO_DISPATCH_INPUT)
+    )
+    if not affirmative:
+        return False
+    # The runtime must also state that the outcome is KNOWN and that the effect
+    # is not unknown; absent or contradictory values leave the state unproven.
+    if _evidence(views, "completion") != "known" or _evidence(views, "effect_unknown") is not False:
+        return False
+    for key in _CONTRADICTORY_MUTATIONS:
+        if _evidence(views, key) is True:
+            return False
+    for key in ("inserted_events", "cleanup_inserted_events"):
+        inserted = _evidence(views, key)
+        if isinstance(inserted, int) and inserted > 0:
+            return False
+    return True
+
+
+def _partial_dispatch(views: list[Mapping]) -> bool:
+    """Whether the evidence shows input that may already have been executed."""
+    requested = _evidence(views, "requested_events")
+    inserted = _evidence(views, "inserted_events")
+    if isinstance(requested, int) and isinstance(inserted, int) and 0 < inserted < requested:
+        return True
+    for key in _CONTRADICTORY_MUTATIONS:
+        if _evidence(views, key) is True:
+            return True
+    input_sent = _evidence(views, "input_sent")
+    return isinstance(input_sent, str) and input_sent.lower() in _POSSIBLE_INPUT
+
+
+def _classify_uncertain(views: list[Mapping]) -> str:
+    if _affirmative_no_dispatch(views):
+        return DISPATCH_NOT_DISPATCHED
+    if _partial_dispatch(views):
+        return DISPATCH_PARTIAL
+    return DISPATCH_UNKNOWN
 
 
 def classify_delivery(result: Any) -> str:
@@ -298,13 +384,17 @@ def classify_delivery(result: Any) -> str:
     ``delivered`` — success, delivery_completed and post_dispatch_validated are
     all exactly ``True``.
 
-    ``not_dispatched`` — ``delivery_completed`` is ``False`` and success is not
-    ``True``: nothing was sent, so the Modeler cannot have executed it. This is
-    the only classification that licenses a compensating restore.
+    ``delivered_unverified`` — ``delivery_completed`` is ``True``: input was
+    dispatched, but success or post-dispatch validation is not ``True``. The
+    command may already have been executed.
 
-    ``delivered_unverified`` — ``delivery_completed`` is ``True`` (the physical
-    input was dispatched) but success or post-dispatch validation is not
-    ``True``. The command may already have been executed.
+    ``not_dispatched`` — the runtime affirmatively reports no input, or an
+    adapter-owned boundary refused before ``execute`` was entered. This is the
+    only classification that licenses a compensating restore.
+
+    ``partial`` — a false completion flag accompanied by evidence of real input
+    (fewer inserted than requested events, a mutation attempt, or input marked
+    sent/unknown). Possibly executed.
 
     ``unknown_dispatch`` — nothing in the data establishes the dispatch state.
     """
@@ -315,21 +405,43 @@ def classify_delivery(result: Any) -> str:
     post = result.get("post_dispatch_validated")
     if success is True and delivered is True and post is True:
         return DISPATCH_DELIVERED
-    if delivered is False and success is not True:
-        return DISPATCH_NOT_DISPATCHED
     if delivered is True:
         return DISPATCH_DELIVERED_UNVERIFIED
-    return DISPATCH_UNKNOWN
+    return _classify_uncertain(_evidence_views(result))
 
 
 def classify_execution_error(exc: BaseException) -> str:
-    """An exception during dispatch leaves the dispatch state UNKNOWN.
+    """Classify a dispatch-time failure from the runtime's own stage evidence.
 
-    A transport error, timeout or rejected call cannot prove the action never
-    reached the window, so it is never classified as a known non-dispatch and
-    never licenses a compensating restore.
+    An exception alone never proves a non-dispatch: a transport error, timeout
+    or rejected call can occur after the physical input was inserted, and a
+    failed post-check keeps ``delivery_completed`` false without meaning zero
+    input. Only affirmative action-stage evidence establishes it.
     """
-    return DISPATCH_UNKNOWN
+    evidence = native_error_evidence(exc)
+    return _classify_uncertain(_evidence_views(evidence))
+
+
+def pre_dispatch_refusal(error: str, *, boundary: str, **fields: Any) -> LiveError:
+    """A refusal proven to have happened BEFORE any physical input was sent.
+
+    The proof is the boundary itself: these checks run in the adapter, on this
+    side of the client, so ``execute`` is never entered and no transport call
+    carrying input is made. That, and not a completion flag, is what makes the
+    non-dispatch positively known.
+    """
+    payload = {
+        "error": error,
+        "dispatch": DISPATCH_NOT_DISPATCHED,
+        "no_dispatch_proof": {
+            "boundary": boundary,
+            "kind": "adapter_owned_pre_execute_boundary",
+            "execute_entered": False,
+        },
+        "gui_state": "unchanged",
+        **fields,
+    }
+    return LiveError(payload)
 
 
 def native_error_evidence(exc: BaseException) -> dict[str, Any]:
@@ -344,6 +456,51 @@ def native_error_evidence(exc: BaseException) -> dict[str, Any]:
     fresh = getattr(exc, "fresh_observation_required", None)
     if fresh is not None:
         evidence["fresh_observation_required"] = bool(fresh)
+    return evidence
+
+
+# Typed action-stage fields the runtime may report. Only these keys, and only
+# with these value types, are copied into an adapter result: no free text, no
+# title, no path, no payload, and nothing a caller could use as a grant.
+_STAGE_BOOLS = (
+    "action_attempted",
+    "mutation_attempted",
+    "focus_mutation_attempted",
+    "effect_unknown",
+)
+_STAGE_INTS = ("requested_events", "inserted_events", "cleanup_inserted_events")
+_STAGE_ENUMS = {
+    "phase": _NO_DISPATCH_PHASES
+    | {
+        "action_dispatch",
+        "local_mutation_dispatch",
+        "activation_dispatch",
+        "upstream_session_refresh",
+        "evidence_dispatch",
+    }
+}
+_STAGE_ENUMS["input_sent"] = _NO_DISPATCH_INPUT | _POSSIBLE_INPUT
+_STAGE_ENUMS["completion"] = frozenset({"known", "unknown"})
+
+
+def _action_stage_evidence(result: Any) -> dict[str, Any]:
+    """Typed action-stage fields of a structured result, projected by type."""
+    evidence: dict[str, Any] = {}
+    for view in _evidence_views(result):
+        for key in _STAGE_BOOLS:
+            value = view.get(key)
+            if type(value) is bool:
+                evidence[key] = value
+        for key in _STAGE_INTS:
+            value = view.get(key)
+            if type(value) is int and 0 <= value < 2**32:
+                evidence[key] = value
+        for key, allowed in _STAGE_ENUMS.items():
+            value = view.get(key)
+            if isinstance(value, str) and value.lower() in allowed:
+                evidence[key] = value.lower()
+    if evidence:
+        evidence["stage_evidence_provenance"] = "runtime_action_stage_fields"
     return evidence
 
 
@@ -460,34 +617,35 @@ class BoundedLiveSession:
         return self._target["process_id"]
 
     def _require_action(self, action: Any) -> None:
-        """Refuse an action the trusted runtime ceiling does not authorize."""
+        """Refuse an action the trusted runtime ceiling does not authorize.
+
+        This runs before ``execute`` is entered, so nothing was dispatched.
+        """
         if action not in self._runtime.allowed_actions:
-            raise LiveError(
-                {
-                    "error": "unauthorized_action",
-                    "action": action,
-                    "allowed_actions": list(self._runtime.allowed_actions),
-                    "message": (
-                        f"The trusted UI Control runtime does not authorize the physical "
-                        f"action {action!r}. The startup owner must add it to "
-                        "UiControlRuntimeOptions.allowed_actions."
-                    ),
-                }
+            raise pre_dispatch_refusal(
+                "unauthorized_action",
+                boundary="allowed_actions_ceiling",
+                action=action,
+                allowed_actions=list(self._runtime.allowed_actions),
+                message=(
+                    f"The trusted UI Control runtime does not authorize the physical "
+                    f"action {action!r}. The startup owner must add it to "
+                    "UiControlRuntimeOptions.allowed_actions."
+                ),
             )
 
     def _menu_route(self, name: Any) -> dict[str, Any]:
         route = self._menu_routes.get(name)
         if not isinstance(route, dict):
-            raise LiveError(
-                {
-                    "error": "menu_route_undeclared",
-                    "menu": name,
-                    "declared_routes": sorted(self._menu_routes),
-                    "message": (
-                        f"No trusted physical route is declared for '{name}'. The startup "
-                        "owner must pass it in menu_routes; pixels_only cannot read the menu."
-                    ),
-                }
+            raise pre_dispatch_refusal(
+                "menu_route_undeclared",
+                boundary="menu_route_declaration",
+                menu=name,
+                declared_routes=sorted(self._menu_routes),
+                message=(
+                    f"No trusted physical route is declared for '{name}'. The startup "
+                    "owner must pass it in menu_routes; pixels_only cannot read the menu."
+                ),
             )
         return dict(route)
 
@@ -499,32 +657,58 @@ class BoundedLiveSession:
         ``effect`` as ``unverifiable`` with ``verification_required``. Both are
         propagated: this method never converts an unverifiable delivery into a
         claimed success, and it never reads or fakes a menu tree.
+
+        Everything before the ``try`` is an adapter-owned boundary: it runs on
+        this side of the client, so no input can have been dispatched when one
+        of those checks refuses. Only the ``try`` block can leave input in an
+        uncertain state, and even then a false ``delivery_completed`` is not
+        treated as proof of zero input -- the runtime keeps that flag false for
+        a partial insertion too.
         """
         self._require_open()
         route = self._menu_route(name)
         self._require_action(route["action"])
-        self.capture()  # fresh native observation; execute() consumes it
+        try:
+            self.capture()  # fresh native observation; execute() consumes it
+        except Exception as exc:
+            # Observation is not input, and this is still before execute(): no
+            # physical input was dispatched, which the boundary proves without
+            # relying on any completion flag from the runtime.
+            raise pre_dispatch_refusal(
+                "pre_dispatch_observation_failed",
+                boundary="fresh_observation_before_execute",
+                menu=name,
+                action=route["action"],
+                original_error=f"{type(exc).__name__}: {exc}",
+                message=(
+                    f"The fresh native observation before the {name} action failed "
+                    f"({exc}). No physical input was dispatched; refusing before any "
+                    "action is sent."
+                ),
+            ) from exc
         try:
             raw = self._client.execute({**route, "input_kind": "raw_input"})
         except Exception as exc:
             # A rejected delivery invalidates the local mutation evidence; the
             # owned task itself stays open until the owner closes it. The
-            # dispatch state is UNKNOWN here: a transport error, timeout or
-            # rejected call cannot prove the action never reached the window,
-            # so the structured evidence is propagated instead of being
-            # flattened into a message.
+            # dispatch state follows the runtime's own action-stage evidence. An
+            # exception by itself proves nothing: a transport error, timeout or
+            # rejected call can happen after input was inserted, so only
+            # affirmative no-dispatch evidence yields "not_dispatched".
+            dispatch = classify_execution_error(exc)
             raise LiveError(
                 {
                     "error": "menu_action_rejected",
                     "menu": name,
                     "action": route["action"],
-                    "dispatch": classify_execution_error(exc),
+                    "dispatch": dispatch,
                     "native_error": native_error_evidence(exc),
                     "gui_state": "unknown",
                     "message": (
                         f"The owned dcc-cua task rejected the {name} action ({exc}). The "
-                        "dispatch state is unknown, so the command may already have been "
-                        "executed; nothing is claimed about the Modeler state."
+                        f"dispatch state is {dispatch}: the command may already have been "
+                        "executed, so nothing is claimed about the Modeler state and no "
+                        "automatic compensation may be inferred from this failure."
                     ),
                 }
             ) from exc
@@ -550,6 +734,11 @@ class BoundedLiveSession:
                 "reason": _UNVERIFIED_EFFECT_REASON,
             },
         }
+        # Action-stage evidence the runtime may attach (requested/inserted event
+        # counts, phase, input state) is projected by type only, so a false
+        # completion flag can be told apart from a partial insertion and no free
+        # text, path or payload is ever copied through.
+        outcome.update(_action_stage_evidence(result))
         outcome["dispatch"] = classify_delivery(outcome)
         return outcome
 
@@ -636,11 +825,10 @@ class BoundedLiveSession:
     def _require_open(self) -> None:
         Runtime, _, _ = _core_ui_types()
         if self._closed or not getattr(self._client, "task_id", None):
-            raise LiveError(
-                {
-                    "error": "session_stopped",
-                    "message": "The owned dcc-cua task has been stopped or expired.",
-                }
+            raise pre_dispatch_refusal(
+                "session_stopped",
+                boundary="session_lifecycle",
+                message="The owned dcc-cua task has been stopped or expired.",
             )
         # Rebind check on EVERY call, not just at construction.
         if (
@@ -648,11 +836,10 @@ class BoundedLiveSession:
             or self._client.options is not self._runtime
         ):
             self._closed = True
-            raise LiveError(
-                {
-                    "error": "session_rebind_rejected",
-                    "message": "The owned session was rebound; refusing to reuse it.",
-                }
+            raise pre_dispatch_refusal(
+                "session_rebind_rejected",
+                boundary="session_lifecycle",
+                message="The owned session was rebound; refusing to reuse it.",
             )
 
     def status(self) -> dict[str, Any]:
