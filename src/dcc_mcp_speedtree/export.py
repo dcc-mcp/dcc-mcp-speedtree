@@ -14,9 +14,22 @@ from pathlib import Path
 from dcc_mcp_core.cancellation import DccMcpCancelledError, check_cancelled, current_job_id
 
 from .bundle import material_dependencies, validate_mesh_header
-from .process import run_modeler
+from .process import OwnedTreeError, run_modeler
 
 FORMATS = {"st9", "st", "fbx", "obj", "abc", "usd"}
+
+
+def _tree_receipt(value):
+    """Read the owned-tree return receipt, or a truthful UNKNOWN when absent."""
+    receipt = getattr(value, "process_tree", None)
+    if isinstance(receipt, dict):
+        return receipt
+    return {
+        "status": "unknown",
+        "drained": False,
+        "clean_exit": False,
+        "reason": "no_runner_receipt",
+    }
 
 
 def fingerprint(path):
@@ -140,12 +153,17 @@ def export_batch(source_paths, preset_path, output_dir, format="st9", timeout_se
                     timeout=timeout_seconds,
                 )
             item["exit_code"] = result.returncode
+            item["process_tree"] = _tree_receipt(result)
+            tree = item["process_tree"]
             if result.returncode != 0:
                 item["status"] = "exporter_failed"
             elif not target.is_file() or not target.stat().st_size:
                 item["status"] = "missing_mesh"
             elif fingerprint(source) != identity or fingerprint(preset) != preset_hash:
                 item["status"] = "input_changed"
+            elif not (tree.get("clean_exit") and tree.get("drained")):
+                # A parent-only exit or an unconfirmed tree return is not an export.
+                item["status"] = "tree_drain_unknown"
             else:
                 validate_mesh_header(target)
                 item["dependencies"] = material_dependencies(folder, output)
@@ -161,12 +179,20 @@ def export_batch(source_paths, preset_path, output_dir, format="st9", timeout_se
                             }
                         )
                 item["dependency_validation"] = "pending_target_import"
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as error:
             item["status"] = "timeout"
-        except DccMcpCancelledError:
+            item["process_tree"] = _tree_receipt(error)
+        except DccMcpCancelledError as error:
             item["status"] = "cancelled"
+            item["process_tree"] = _tree_receipt(error)
+        except OwnedTreeError as error:
+            item["status"] = "failed"
+            item["process_tree"] = _tree_receipt(error)
+            item["error_type"] = type(error).__name__
+            item["error"] = str(error)
         except (OSError, ValueError) as error:
             item["status"] = "failed"
+            item["process_tree"] = _tree_receipt(error)
             item["error_type"] = type(error).__name__
             item["error"] = (
                 str(error)
@@ -222,6 +248,10 @@ def verify_export(manifest_path):
             raise ValueError("Malformed manifest item")
         if item["status"] != "exported":
             errors.append(item["status"])
+        else:
+            tree = item.get("process_tree")
+            if not isinstance(tree, dict) or not (tree.get("clean_exit") and tree.get("drained")):
+                errors.append("tree_drain_unverified")
         files = {f["path"]: f for f in item["files"]}
         if len(files) != len(item["files"]):
             errors.append("duplicate_inventory_path")
