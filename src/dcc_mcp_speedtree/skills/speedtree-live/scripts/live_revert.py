@@ -7,7 +7,8 @@ from dcc_mcp_speedtree import live
 def main(process_id=None, settle_seconds=3.0, **kwargs):
     try:
         result = live.revert(
-            process_id, settle_seconds,
+            process_id,
+            settle_seconds,
             session=kwargs.get(live.TRUSTED_SESSION_PARAM),
         )
     except live.LiveError as exc:
@@ -15,7 +16,8 @@ def main(process_id=None, settle_seconds=3.0, **kwargs):
         error = payload.pop("error", "live_failed")
         payload.pop("message", None)  # str(exc) already supplies the message
         return skill_error(str(exc), error, **payload)
-    return skill_success("Document reloaded from disk; read the screenshot PNG.", **result)
+    known = "Delivered the revert command to the bound Modeler window."
+    return skill_success(live.effect_message(result, action="revert", known=known), **result)
 
 
 if __name__ == "__main__":

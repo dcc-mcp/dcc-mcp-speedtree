@@ -6,9 +6,7 @@ from dcc_mcp_speedtree import live
 @skill_entry
 def main(path, process_id=None, **kwargs):
     try:
-        result = live.open_recent(
-            path, process_id, session=kwargs.get(live.TRUSTED_SESSION_PARAM)
-        )
+        result = live.open_recent(path, process_id, session=kwargs.get(live.TRUSTED_SESSION_PARAM))
     except live.LiveError as exc:
         payload = dict(exc.payload)
         error = payload.pop("error", "live_failed")

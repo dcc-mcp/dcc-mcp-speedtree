@@ -7,7 +7,9 @@ from dcc_mcp_speedtree import live
 def main(process_id=None, output_path=None, scale=0.6, **kwargs):
     try:
         result = live.screenshot(
-            process_id, output_path, scale,
+            process_id,
+            output_path,
+            scale,
             session=kwargs.get(live.TRUSTED_SESSION_PARAM),
         )
     except live.LiveError as exc:

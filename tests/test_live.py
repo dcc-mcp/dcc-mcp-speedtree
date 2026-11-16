@@ -14,7 +14,9 @@ import pytest
 from dcc_mcp_speedtree import live
 from dcc_mcp_speedtree.graph import SpeedTreeGraph
 
-SET_LENGTH = [{"op": "set_property", "node_id": "root", "name": "Spine:Length:Absolute", "value": 9}]
+SET_LENGTH = [
+    {"op": "set_property", "node_id": "root", "name": "Spine:Length:Absolute", "value": 9}
+]
 BAD_EDIT = [{"op": "set_property", "node_id": "missing", "name": "x", "value": 1}]
 
 

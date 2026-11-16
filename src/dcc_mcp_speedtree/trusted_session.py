@@ -86,7 +86,7 @@ _COORDINATE_ACTIONS = frozenset({"click", "double_click", "right_click", "move",
 # must declare for each. There is no built-in guess: the Modeler exposes no
 # scripting API and pixels_only cannot read a menu, so the chord has to come
 # from the trusted bootstrap, never from tool JSON or an environment variable.
-_REQUIRED_MENU_ROUTES = ("save", "revert")
+_REQUIRED_MENU_ROUTES: tuple[str, ...] = ()
 
 
 def _validate_menu_routes(menu_routes: Any) -> dict[str, dict[str, Any]]:
@@ -95,17 +95,29 @@ def _validate_menu_routes(menu_routes: Any) -> dict[str, dict[str, Any]]:
     A route is one physical action with the payload fields the public protocol
     accepts. ``PIXEL_ACTIONS`` is imported from Core, so an unknown action name
     is refused here rather than being forwarded to the runtime.
+
+    Declaring routes is OPTIONAL. A read-only startup (empty
+    ``allowed_actions``, no menu routes) must still be able to construct a
+    session and use ``status()`` / ``capture()``; the presence of a route is
+    enforced where it is actually needed, in ``BoundedLiveSession.menu``.
     """
     from dcc_mcp_core.host.ui_control_options import PIXEL_ACTIONS
 
     if menu_routes is None:
         menu_routes = {}
     if not isinstance(menu_routes, Mapping):
-        raise LiveError({"error": "invalid_menu_routes", "message": "menu_routes must be a mapping."})
+        raise LiveError(
+            {"error": "invalid_menu_routes", "message": "menu_routes must be a mapping."}
+        )
     validated: dict[str, dict[str, Any]] = {}
     for name, route in menu_routes.items():
         if not isinstance(name, str) or not isinstance(route, Mapping):
-            raise LiveError({"error": "invalid_menu_routes", "message": "Each menu route must be a named mapping."})
+            raise LiveError(
+                {
+                    "error": "invalid_menu_routes",
+                    "message": "Each menu route must be a named mapping.",
+                }
+            )
         action = route.get("action")
         if action not in PIXEL_ACTIONS:
             raise LiveError(
@@ -142,18 +154,6 @@ def _validate_menu_routes(menu_routes: Any) -> dict[str, dict[str, Any]]:
                 }
             )
         validated[name] = dict(route)
-    missing = [name for name in _REQUIRED_MENU_ROUTES if not validated.get(name)]
-    if missing:
-        raise LiveError(
-            {
-                "error": "menu_routes_incomplete",
-                "missing_routes": missing,
-                "message": (
-                    "The trusted bootstrap must declare the physical route for "
-                    f"{', '.join(missing)}; pixels_only cannot read the Modeler menu."
-                ),
-            }
-        )
     return validated
 
 
@@ -279,13 +279,72 @@ def delivery_confirmed(result: Any) -> bool:
     Core's client returns a boolean result rather than raising. This says
     nothing about the application EFFECT, which stays unverified either way.
     """
+    return classify_delivery(result) == DISPATCH_DELIVERED
+
+
+# Dispatch classification. "not_dispatched" is the ONLY state in which the
+# command is positively known never to have reached the window; in every other
+# non-confirmed state it may already have been executed, so recovery material
+# must be preserved rather than spent on a blind compensating restore.
+DISPATCH_DELIVERED = "delivered"
+DISPATCH_NOT_DISPATCHED = "not_dispatched"
+DISPATCH_DELIVERED_UNVERIFIED = "delivered_unverified"
+DISPATCH_UNKNOWN = "unknown_dispatch"
+
+
+def classify_delivery(result: Any) -> str:
+    """Classify a structured action result by what reached the window.
+
+    ``delivered`` — success, delivery_completed and post_dispatch_validated are
+    all exactly ``True``.
+
+    ``not_dispatched`` — ``delivery_completed`` is ``False`` and success is not
+    ``True``: nothing was sent, so the Modeler cannot have executed it. This is
+    the only classification that licenses a compensating restore.
+
+    ``delivered_unverified`` — ``delivery_completed`` is ``True`` (the physical
+    input was dispatched) but success or post-dispatch validation is not
+    ``True``. The command may already have been executed.
+
+    ``unknown_dispatch`` — nothing in the data establishes the dispatch state.
+    """
     if not isinstance(result, Mapping):
-        return False
-    return (
-        result.get("success") is True
-        and result.get("delivery_completed") is True
-        and result.get("post_dispatch_validated") is True
-    )
+        return DISPATCH_UNKNOWN
+    success = result.get("success")
+    delivered = result.get("delivery_completed")
+    post = result.get("post_dispatch_validated")
+    if success is True and delivered is True and post is True:
+        return DISPATCH_DELIVERED
+    if delivered is False and success is not True:
+        return DISPATCH_NOT_DISPATCHED
+    if delivered is True:
+        return DISPATCH_DELIVERED_UNVERIFIED
+    return DISPATCH_UNKNOWN
+
+
+def classify_execution_error(exc: BaseException) -> str:
+    """An exception during dispatch leaves the dispatch state UNKNOWN.
+
+    A transport error, timeout or rejected call cannot prove the action never
+    reached the window, so it is never classified as a known non-dispatch and
+    never licenses a compensating restore.
+    """
+    return DISPATCH_UNKNOWN
+
+
+def native_error_evidence(exc: BaseException) -> dict[str, Any]:
+    """Project a Core error for truthful classification, inventing nothing."""
+    evidence: dict[str, Any] = {"type": type(exc).__name__, "message": str(exc)}
+    code = getattr(exc, "code", None)
+    if isinstance(code, str):
+        evidence["code"] = code
+    native = getattr(exc, "native_evidence", None)
+    if isinstance(native, Mapping):
+        evidence["native_evidence"] = dict(native)
+    fresh = getattr(exc, "fresh_observation_required", None)
+    if fresh is not None:
+        evidence["fresh_observation_required"] = bool(fresh)
+    return evidence
 
 
 def create_owned_pixels_session(
@@ -315,7 +374,9 @@ def create_owned_pixels_session(
             }
         )
     if not isinstance(session_id, str) or not session_id:
-        raise LiveError({"error": "invalid_target", "message": "session_id must be a non-empty string"})
+        raise LiveError(
+            {"error": "invalid_target", "message": "session_id must be a non-empty string"}
+        )
     return PixelsClient(
         session_id=session_id,
         dcc_type="speedtree",
@@ -374,12 +435,18 @@ class BoundedLiveSession:
         hwnd = target.get("window_handle")
         if type(pid) is not int or pid <= 0 or type(hwnd) is not int or hwnd <= 0:
             raise LiveError(
-                {"error": "invalid_target", "message": "An exact positive PID and HWND binding is required."}
+                {
+                    "error": "invalid_target",
+                    "message": "An exact positive PID and HWND binding is required.",
+                }
             )
         bound = client.target
         if bound.get("process_id") != pid or bound.get("window_handle") != hwnd:
             raise LiveError(
-                {"error": "invalid_target", "message": "The owned client is not bound to the declared PID/HWND."}
+                {
+                    "error": "invalid_target",
+                    "message": "The owned client is not bound to the declared PID/HWND.",
+                }
             )
         self._client = client
         self._runtime = runtime
@@ -441,18 +508,29 @@ class BoundedLiveSession:
             raw = self._client.execute({**route, "input_kind": "raw_input"})
         except Exception as exc:
             # A rejected delivery invalidates the local mutation evidence; the
-            # owned task itself stays open until the owner closes it.
+            # owned task itself stays open until the owner closes it. The
+            # dispatch state is UNKNOWN here: a transport error, timeout or
+            # rejected call cannot prove the action never reached the window,
+            # so the structured evidence is propagated instead of being
+            # flattened into a message.
             raise LiveError(
                 {
                     "error": "menu_action_rejected",
                     "menu": name,
                     "action": route["action"],
-                    "message": f"The owned dcc-cua task rejected the {name} action: {exc}",
+                    "dispatch": classify_execution_error(exc),
+                    "native_error": native_error_evidence(exc),
+                    "gui_state": "unknown",
+                    "message": (
+                        f"The owned dcc-cua task rejected the {name} action ({exc}). The "
+                        "dispatch state is unknown, so the command may already have been "
+                        "executed; nothing is claimed about the Modeler state."
+                    ),
                 }
             ) from exc
         result = raw.get("result") if isinstance(raw.get("result"), dict) else {}
         delivery = result.get("delivery") if isinstance(result.get("delivery"), dict) else {}
-        return {
+        outcome = {
             "menu": name,
             "action": route["action"],
             "process_id": self._target["process_id"],
@@ -472,6 +550,8 @@ class BoundedLiveSession:
                 "reason": _UNVERIFIED_EFFECT_REASON,
             },
         }
+        outcome["dispatch"] = classify_delivery(outcome)
+        return outcome
 
     def unsupported_open_recent(self, path: Any) -> LiveError:
         """The exact missing contract for opening a file, stated precisely.
@@ -557,13 +637,22 @@ class BoundedLiveSession:
         Runtime, _, _ = _core_ui_types()
         if self._closed or not getattr(self._client, "task_id", None):
             raise LiveError(
-                {"error": "session_stopped", "message": "The owned dcc-cua task has been stopped or expired."}
+                {
+                    "error": "session_stopped",
+                    "message": "The owned dcc-cua task has been stopped or expired.",
+                }
             )
         # Rebind check on EVERY call, not just at construction.
-        if not isinstance(self._client.options, Runtime) or self._client.options is not self._runtime:
+        if (
+            not isinstance(self._client.options, Runtime)
+            or self._client.options is not self._runtime
+        ):
             self._closed = True
             raise LiveError(
-                {"error": "session_rebind_rejected", "message": "The owned session was rebound; refusing to reuse it."}
+                {
+                    "error": "session_rebind_rejected",
+                    "message": "The owned session was rebound; refusing to reuse it.",
+                }
             )
 
     def status(self) -> dict[str, Any]:
@@ -576,7 +665,9 @@ class BoundedLiveSession:
             raise LiveError(
                 {
                     "error": "window_state_rejected",
-                    "message": "The owned dcc-cua task rejected the window-state proof: {}".format(exc),
+                    "message": "The owned dcc-cua task rejected the window-state proof: {}".format(
+                        exc
+                    ),
                 }
             ) from exc
         return {
@@ -614,7 +705,9 @@ class BoundedLiveSession:
         """
         self._require_open()
         try:
-            raw = self._client.snapshot(max_depth=_SNAPSHOT_MAX_DEPTH, max_nodes=_SNAPSHOT_MAX_NODES)
+            raw = self._client.snapshot(
+                max_depth=_SNAPSHOT_MAX_DEPTH, max_nodes=_SNAPSHOT_MAX_NODES
+            )
         except Exception as exc:
             self._closed = True
             raise LiveError(
@@ -624,7 +717,11 @@ class BoundedLiveSession:
                 }
             ) from exc
         pixels = raw.get("image_bytes")
-        if not isinstance(pixels, (bytes, bytearray)) or len(pixels) < 24 or bytes(pixels[:8]) != _PNG_MAGIC:
+        if (
+            not isinstance(pixels, (bytes, bytearray))
+            or len(pixels) < 24
+            or bytes(pixels[:8]) != _PNG_MAGIC
+        ):
             self._closed = True
             raise LiveError(
                 {
@@ -683,7 +780,9 @@ class TrustedLiveExecutionBridge(HostExecutionBridge):
         core = super().as_inprocess_executor()
 
         def executor(script_path, params, **metadata):
-            effective = {key: value for key, value in params.items() if not str(key).startswith("trusted_")}
+            effective = {
+                key: value for key, value in params.items() if not str(key).startswith("trusted_")
+            }
             skill_name = str(metadata.get("skill_name") or "")
             action_name = str(metadata.get("action_name") or "")
             if (
