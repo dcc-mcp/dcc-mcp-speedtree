@@ -258,6 +258,36 @@ def build_ui_control_runtime(
     )
 
 
+# The runtime reports every delivered physical action's application effect as
+# "unverifiable". The only same-task observations Core 0.20.44 exposes are
+# native pixels and window state, and neither proves the Modeler applied a menu
+# command, so an unverified effect is reported as unknown -- never upgraded to
+# success and never silently turned into a failure that triggers compensation.
+_UNVERIFIED_EFFECT_REASON = (
+    "The runtime reports the physical action's effect as unverifiable. Native "
+    "pixels and window state are the only same-task observations available and "
+    "neither proves the Modeler applied the menu command."
+)
+
+
+def delivery_confirmed(result: Any) -> bool:
+    """Whether the runtime confirmed the physical action was actually DELIVERED.
+
+    A structured ``success: false``, or a ``delivery_completed`` /
+    ``post_dispatch_validated`` that is not exactly ``True``, is a failed or
+    unknown delivery and must be refused. No exception is required for that:
+    Core's client returns a boolean result rather than raising. This says
+    nothing about the application EFFECT, which stays unverified either way.
+    """
+    if not isinstance(result, Mapping):
+        return False
+    return (
+        result.get("success") is True
+        and result.get("delivery_completed") is True
+        and result.get("post_dispatch_validated") is True
+    )
+
+
 def create_owned_pixels_session(
     *,
     runtime: Any,
@@ -430,46 +460,65 @@ class BoundedLiveSession:
             "runtime_version": self._runtime.runtime_version,
             "target": self._client.target,
             "success": raw.get("success"),
+            "delivery_completed": delivery.get("delivery_completed"),
+            "post_dispatch_validated": delivery.get("post_dispatch_validated"),
             "effect": raw.get("effect", "unverifiable"),
             "verification_required": raw.get("verification_required", True),
             "fresh_observation_required": raw.get("fresh_observation_required", True),
-            "delivery_completed": delivery.get("delivery_completed"),
-            "post_dispatch_validated": delivery.get("post_dispatch_validated"),
+            "verification": {
+                "status": "unknown",
+                "effect": raw.get("effect", "unverifiable"),
+                "evidence": ["delivery_completed", "post_dispatch_validated", "native_pixels"],
+                "reason": _UNVERIFIED_EFFECT_REASON,
+            },
         }
 
     def unsupported_open_recent(self, path: Any) -> LiveError:
-        """The exact missing public API for opening a file, stated precisely.
+        """The exact missing contract for opening a file, stated precisely.
 
-        The owned task is bound to ONE exact PID/HWND -- ``UiControlRuntimeOptions``
-        carries a single binary/target and ``PixelsMcpHostClient._check_target``
-        rejects a response for any other window -- so a native file dialog is a
-        different window the task may not target. ``pixels_only`` observation
-        also reports ``accessibility_available: False`` and
-        ``whole_desktop_capture: False``, so a menu cannot be read, enumerated or
-        targeted. Core 0.20.44 offers no typed "open this file in the bound DCC"
-        action. Needed: either a public typed DCC document-open action, or a
-        public API to retarget/extend the owned task to a child dialog HWND with
-        its own authorization scope.
+        The limitation is the OBSERVATION MODE and the absence of element
+        targeting on the adapter's supported startup route -- not a file-dialog
+        HWND. File > Recents is a menu of the SAME bound window, so it does not
+        inherently require another window, and the owned public-MCP transport
+        (``OwnedCuaMcpTransport.rpc`` / ``.tool``) is a generic protocol
+        transport that is not itself pixels-limited; the connected Host owns the
+        real grants. What Core 0.20.44 exposes to an adapter is the constraint:
+        ``UiControlRuntimeOptions`` accepts only ``owned_mcp_pixels`` with
+        ``pixels_only``, and ``PixelsMcpHostClient`` is the only public host
+        client -- it refuses element tokens, refuses a semantic observation
+        (``node_count`` 0) and leaves ``invoke_menu`` unsupported. Without
+        element targeting there is no supported way to locate or activate a
+        recents entry; guessing pixel coordinates is not a document contract.
         """
         return LiveError(
             {
-                "error": "open_recent_unsupported_by_exact_window_route",
+                "error": "open_recent_unsupported_on_pixels_only_route",
                 "path": str(path),
                 "capability": "open_recent",
-                "missing_api": [
-                    "a public typed DCC document-open action on the owned ui-control task",
-                    "or a public API to retarget the owned task to a child dialog HWND",
-                    "and semantic/accessibility targeting (pixels_only exposes none)",
+                "route": "owned_mcp_pixels / pixels_only",
+                "available_primitives": [
+                    "physical input at declared pixel coordinates (click / keypress / type)",
+                    "native pixel observation and exact window state",
+                ],
+                "missing_contract": [
+                    "a public semantic-capable host client, or an observation_mode/transport value other than owned_mcp_pixels + pixels_only in UiControlRuntimeOptions",
+                    "element targeting in the adapter client (element_token / element_index are rejected today)",
+                    "or a typed DCC document-open action on the owned task",
                 ],
                 "evidence": [
-                    "dcc_mcp_core/host/ui_control_options.py: UiControlRuntimeOptions binds one binary and one target",
-                    "dcc_mcp_core/host/cua_mcp_client.py: PixelsMcpHostClient._check_target rejects another window",
-                    "dcc_mcp_core/host/cua_mcp_client.py: snapshot() requires accessibility_available is False",
+                    "dcc_mcp_core/host/ui_control_options.py: __post_init__ requires transport == 'owned_mcp_pixels' and observation_mode == 'pixels_only'",
+                    "dcc_mcp_core/host/cua_mcp_client.py: execute() rejects element_token / element_index / accessibility_state_id / secret_handle",
+                    "dcc_mcp_core/host/cua_mcp_client.py: snapshot() rejects semantic observation, node_count is 0, invoke_menu maps to _unsupported",
+                    "dcc_mcp_core/host/cua_mcp_transport.py: OwnedCuaMcpTransport.rpc/tool is a generic public-protocol transport, so the transport is not the limit",
+                ],
+                "not_claimed": [
+                    "File > Recents does not inherently require a different file-dialog HWND; the earlier wording was wrong",
+                    "no assumption that the dcc-cua task protocol lacks a semantic method when the Host grants one",
                 ],
                 "message": (
-                    "Opening a file is not available on the exact-window pixels-only route: "
-                    "the owned task cannot target the file dialog and cannot read the menu. "
-                    "Use dcc-cua / DCC-MCP ui-control to open the document, then continue."
+                    "Opening a recent file needs element targeting, which the supported "
+                    "pixels-only startup route does not expose. Use dcc-cua / DCC-MCP "
+                    "ui-control to open the document, then continue with the live tools."
                 ),
             }
         )

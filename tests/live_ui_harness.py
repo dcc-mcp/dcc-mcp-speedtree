@@ -106,6 +106,7 @@ class ScriptedTransport:
         self.fail_stop = False
         self.fail_action_matching: dict | None = None
         self.fail_snapshot_from: int | None = None
+        self.delivery_success = True
 
     def _context(self) -> dict:
         return {
@@ -184,13 +185,15 @@ class ScriptedTransport:
             for key, value in (self.fail_action_matching or {}).items():
                 if action.get(key) == value:
                     raise OwnedCuaMcpError("scripted_rejection", f"scripted {value} failure", {})
-            return {**base, "type": "action_completed", "success": True,
+            return {**base, "type": "action_completed", "success": self.delivery_success,
                     "result": {
-                        "success": True, "route": "windows_exact_pixel_final_input",
+                        "success": self.delivery_success,
+                        "route": "windows_exact_pixel_final_input",
                         "native_instance": dict(NATIVE_INSTANCE), "effect": "unverifiable",
                         "verification_required": True, "fresh_observation_required": True,
                         "target": self._target(),
-                        "delivery": {"delivery_completed": True, "post_dispatch_validated": True},
+                        "delivery": {"delivery_completed": self.delivery_success,
+                                     "post_dispatch_validated": self.delivery_success},
                     }}
         raise AssertionError(f"unexpected method {method}")
 
