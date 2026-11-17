@@ -5,13 +5,45 @@ This module edits the observed file format, not a supported live Modeler API.
 
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import json
+import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path, PureWindowsPath
 
 from .graph import GraphError, SpeedTreeGraph
+
+
+def _publish_no_replace(stage, output):
+    """Publish a complete directory atomically, or fail without replacing a path."""
+    if os.name == "nt":
+        os.rename(stage, output)
+        return
+    if sys.platform.startswith("linux"):
+        libc = ctypes.CDLL(None, use_errno=True)
+        try:
+            rename = libc.renameat2
+        except AttributeError as exc:
+            raise OSError("Atomic no-replace directory rename is unavailable") from exc
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename.restype = ctypes.c_int
+        if rename(-100, os.fsencode(stage), -100, os.fsencode(output), 1):
+            error = ctypes.get_errno()
+            if error == errno.EEXIST:
+                raise FileExistsError(error, os.strerror(error), str(output))
+            raise OSError(error, os.strerror(error), str(output))
+        return
+    raise OSError("Atomic no-replace publication is supported on Windows and Linux only")
 
 
 def _hash(path):
@@ -99,7 +131,10 @@ def generate_project(source_path, output_dir, operations, brief):
         raise ValueError("brief must be an object")
     json.dumps({"brief": brief, "operations": operations}, allow_nan=False)
     source = Path(source_path).expanduser().resolve(strict=True)
-    output = Path(output_dir).expanduser().resolve()
+    requested_output = Path(output_dir).expanduser()
+    if requested_output.is_symlink():
+        raise ValueError("Output must not be a symbolic link")
+    output = requested_output.parent.resolve(strict=True) / requested_output.name
     if source.suffix.lower() != ".spm":
         raise ValueError("A reference SPM project is required")
     if output.exists() or output == source.parent or output in source.parents:
@@ -120,16 +155,19 @@ def generate_project(source_path, output_dir, operations, brief):
         else [e.text.strip() for e in assets.iter("TexFilename") if e.text and e.text.strip()]
     )
     dependencies = []
-    seen = set()
+    seen = {}
     for value in declared + found:
         rel = _relative(value)
+        key = str(rel).casefold()
+        if key in seen:
+            if seen[key] != str(rel):
+                raise ValueError(f"Dependency paths differ only by case: {seen[key]} and {rel}")
+            continue
         item = (source.parent / rel).resolve(strict=True)
         if source.parent not in item.parents or not item.is_file():
             raise ValueError(f"Dependency escapes source directory or is not a file: {value}")
-        key = str(rel).casefold()
-        if key not in seen:
-            seen.add(key)
-            dependencies.append((rel, item, _hash(item)))
+        seen[key] = str(rel)
+        dependencies.append((rel, item, _hash(item)))
     if any(
         str(rel).casefold() in {source.name.casefold(), "manifest.json"}
         for rel, _, _ in dependencies
@@ -176,7 +214,7 @@ def generate_project(source_path, output_dir, operations, brief):
         )
         if _hash(source) != original["source_sha256"]:
             raise GraphError("Source changed during preparation")
-        stage.rename(output)
+        _publish_no_replace(stage, output)
     return {
         "project_path": str(output / source.name),
         "manifest_path": str(output / "manifest.json"),

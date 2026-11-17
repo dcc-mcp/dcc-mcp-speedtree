@@ -31,6 +31,23 @@ def test_separate_quad_vertex_indices_produce_two_cards(tmp_path):
     assert result["card_triangles"] == 4
 
 
+def test_many_interleaved_cards_keep_first_face_order(tmp_path):
+    count = 1500
+    vertices = "".join(
+        f"v {n * 2} 0 0\nv {n * 2 + 1} 0 0\nv {n * 2 + 1} 1 0\nv {n * 2} 1 0\n"
+        for n in range(count)
+    )
+    faces = "".join(f"f {n * 4 + 1} {n * 4 + 2} {n * 4 + 3}\n" for n in range(count))
+    faces += "".join(f"f {n * 4 + 1} {n * 4 + 3} {n * 4 + 4}\n" for n in range(count))
+    result = validate_card_planes(mesh(tmp_path, vertices, faces), {"card": "card"})
+    assert result["status"] == "passed"
+    assert result["card_components"] == count
+    assert result["card_triangles"] == 2 * count
+    assert [item["line_numbers"] for item in result["components"]] == [
+        [4 * count + 2 + n, 5 * count + 2 + n] for n in range(count)
+    ]
+
+
 def test_folded_quad_fails_with_excess_distance(tmp_path):
     vertices = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0.2\n"
     result = validate_card_planes(mesh(tmp_path, vertices, TRIANGLES), {"card": "card"})
