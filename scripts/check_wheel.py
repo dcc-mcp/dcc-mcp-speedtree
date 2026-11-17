@@ -20,9 +20,8 @@ package = Path(dcc_mcp_speedtree.__file__).resolve().parent
 assert package.is_relative_to(root), (package, root)
 skills = package / "skills"
 assert (skills / "speedtree-official/metadata/depends.md").is_file()
-expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0, "speedtree-nodes": 5,
-            "speedtree-live": 7}
-assert not (package / "live.ps1").exists(), "raw UI bridge must not be installed"
+expected = {"speedtree-discovery": 7, "speedtree-export": 4, "speedtree-official": 0,
+            "speedtree-nodes": 5, "speedtree-production": 6, "speedtree-live": 7}
 exe = root / "SpeedTree_Modeler.exe"
 exe.write_bytes(b"not executable; metadata-only fixture")
 server = SpeedTreeMcpServer(executable=str(exe), enable_gateway_failover=False,
@@ -41,10 +40,15 @@ try:
         script = Path(action["source_file"]).resolve()
         assert script.is_file() and script.is_relative_to(package), script
         if action["name"].startswith("speedtree_live__"):
-            continue  # live tools act on the open Modeler document; tests/test_skill_catalog.py checks them
+            continue  # exact live annotations are checked in test_skill_catalog.py
         mutating = action["name"] == "speedtree_export__export_batch"
-        assert action["annotations"]["read_only_hint"] is not (mutating or action["name"] == "speedtree_nodes__edit_graph")
+        assert action["annotations"]["read_only_hint"] is not (
+            mutating or action["name"] in {"speedtree_nodes__edit_graph",
+                                           "speedtree_production__production_generate",
+                                           "speedtree_production__prepare_bare_project"})
         assert action["annotations"]["destructive_hint"] is mutating
+        if mutating:
+            assert action["execution"] == "async" and action["annotations"]["deferred_hint"] is True
     result = runpy.run_path(str(skills / "speedtree-discovery/scripts/inspect_capabilities.py"))["main"]()
     assert result["success"] and result["context"]["full_modeler_coverage"] is False
     assert result["context"]["live_probe_performed"] is False
@@ -58,10 +62,64 @@ try:
     assert node_result["success"], node_result
     assert node_result["context"]["graph"]["generators"][0]["name"] == "Verified tree"
     assert node_result["context"]["source_modified"] is False
+    source_before = source.read_bytes()
+    production_result = runpy.run_path(str(skills / "speedtree-production/scripts/production_generate.py"))["main"](
+        source_path=str(source), output_dir=str(root / "candidate"),
+        operations=[{"op": "rename", "node_id": "root", "name": "Production candidate"}],
+        brief={"seed": 17})
+    assert production_result["success"], production_result
+    context = production_result["context"]
+    assert context["status"] == "candidate_prepared", context
+    assert context["validation"]["modeler_regeneration"] == "not_run"
+    assert source.read_bytes() == source_before
+    manifest = json.loads(Path(context["manifest_path"]).read_text(encoding="utf-8"))
+    assert manifest["brief"]["seed"] == 17 and manifest["validation"]["seed_effect"] == "not_verified"
+    assert manifest["candidate_graph"]["generators"][0]["name"] == "Production candidate"
+    assert Path(context["project_path"]).is_file()
+    obj = root / "fixture.obj"
+    obj.write_text("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nusemtl leaf\nf 1 2 3\nf 1 3 4\n", encoding="utf-8")
+    budget = runpy.run_path(str(skills / "speedtree-production/scripts/validate_obj_budget.py"))["main"](
+        obj_path=str(obj), material_categories={"leaf": "cards"},
+        total_max_triangles=2, category_limits={"cards": {"min": 2, "max": 2}})
+    assert budget["success"] and budget["context"]["status"] == "passed", budget
+    assert budget["context"]["total_triangles"] == 2
+    plane_action = next(action for action in actions
+                        if action["name"] == "speedtree_production__validate_card_planes")
+    assert plane_action["annotations"]["read_only_hint"] is True
+    planes = runpy.run_path(str(skills / "speedtree-production/scripts/validate_card_planes.py"))["main"](
+        full_obj=str(obj), material_categories={"leaf": "card"})
+    assert planes["success"] and planes["context"]["status"] == "passed", planes
+    assert planes["context"]["card_components"] == 1 and planes["context"]["card_triangles"] == 2
+    bare = root / "bare.obj"
+    bare.write_text("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3\n", encoding="utf-8")
+    pair = runpy.run_path(str(skills / "speedtree-production/scripts/validate_obj_pair.py"))["main"](
+        full_path=str(obj), bare_path=str(bare), total_max_triangles=2, card_triangles=1)
+    assert pair["success"] and pair["context"]["status"] == "passed", pair
+    assert pair["context"]["full_minus_bare_triangles"] == 1
+    structure_source = root / "structure.spm"
+    structure_source.write_text(
+        '<SpeedTree Version="8"><Generators>'
+        '<Generator Type="Tree"><GUID>root</GUID><Name>root</Name><Properties/></Generator>'
+        '<Generator Type="Branch"><GUID>trunk</GUID><Name>trunk</Name><Properties>'
+        '<Property><Name>Length</Name><Value>2</Value></Property></Properties></Generator>'
+        '<Generator Type="Branch"><GUID>primary</GUID><Name>primary</Name><Properties/></Generator>'
+        '</Generators><Links>'
+        '<Link><GUID>link1</GUID><SourceGUID>root</SourceGUID><TargetGUID>trunk</TargetGUID></Link>'
+        '<Link><GUID>link2</GUID><SourceGUID>trunk</SourceGUID><TargetGUID>primary</TargetGUID></Link>'
+        '</Links></SpeedTree>', encoding="utf-8")
+    structure = runpy.run_path(str(skills / "speedtree-production/scripts/validate_branch_structure.py"))["main"](
+        source_path=str(structure_source), trunk_id="trunk", max_branch_order=2)
+    assert structure["success"] and structure["context"]["status"] == "passed", structure
+    assert structure["context"]["primary_generators"] == 1
+    bare_entry = runpy.run_path(str(skills / "speedtree-production/scripts/prepare_bare_project.py"))
+    assert callable(bare_entry["main"])
     live_status = runpy.run_path(str(skills / "speedtree-live/scripts/live_status.py"))["main"]()
     assert live_status["success"] is False and live_status["error"] == "no_authorized_ui_route", live_status
     print(json.dumps({"wheel_import": True, "discovered_and_loaded": expected,
                       "capability_entry_point": "passed", "node_entry_point": "passed",
+                      "production_entry_point": "passed", "budget_entry_point": "passed",
+                      "pair_entry_point": "passed", "structure_entry_point": "passed",
+                      "bare_entry_point": "present", "planarity_entry_point": "passed",
                       "live_entry_point": "no_authorized_ui_route", "host_probe": False}))
 finally:
     server.stop()

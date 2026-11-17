@@ -178,6 +178,7 @@ class SpeedTreeMcpServer(DccServerBase):
                     "speedtree-discovery",
                     "speedtree-export",
                     "speedtree-nodes",
+                    "speedtree-production",
                     "speedtree-live",
                 ),
                 env_var_minimal="DCC_MCP_SPEEDTREE_MINIMAL",
