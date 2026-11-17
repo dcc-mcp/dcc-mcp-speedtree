@@ -459,6 +459,19 @@ def native_error_evidence(exc: BaseException) -> dict[str, Any]:
     return evidence
 
 
+def capture_failure_evidence(exc: BaseException) -> dict[str, Any]:
+    """Retain only Core's bounded safe fields from an actual owned MCP error."""
+    try:
+        from dcc_mcp_core.host.cua_mcp_errors import OwnedCuaMcpError, safe_failure_evidence
+    except ImportError:
+        # Older supported Core versions may have only the legacy error shape.
+        return {}
+    if not isinstance(exc, OwnedCuaMcpError):
+        return {}
+    native = exc.native_evidence
+    return safe_failure_evidence(native) if isinstance(native, dict) else {}
+
+
 # Typed action-stage fields the runtime may report. Only these keys, and only
 # with these value types, are copied into an adapter result: no free text, no
 # title, no path, no payload, and nothing a caller could use as a grant.
@@ -897,10 +910,12 @@ class BoundedLiveSession:
             )
         except Exception as exc:
             self._closed = True
+            evidence = capture_failure_evidence(exc)
             raise LiveError(
                 {
                     "error": "capture_proof_rejected",
                     "message": "The owned dcc-cua task rejected the capture proof: {}".format(exc),
+                    **({"native_evidence": evidence} if evidence else {}),
                 }
             ) from exc
         pixels = raw.get("image_bytes")
