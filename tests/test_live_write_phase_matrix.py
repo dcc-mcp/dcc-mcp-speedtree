@@ -179,8 +179,9 @@ def test_apply_reload_uncertainty_never_reaches_the_dependent_phase(
 ):
     """The gate comes first, so no reload-uncertainty form can start an edit.
 
-    The preservation of an edit and its backup is asserted on undo, which is the
-    write path that still reaches a reload.
+    Both write entries now refuse before a reload: apply at the save
+    prerequisite, undo at the active-document binding gate. No dependent edit
+    or reload-uncertainty form is reachable on the pixels-only route.
     """
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree)
@@ -192,47 +193,53 @@ def test_apply_reload_uncertainty_never_reaches_the_dependent_phase(
     assert gui.transport.action_keys() == ["ctrl+s"]
 
 
-def test_undo_reload_proved_before_execute_may_keep_the_restore(monkeypatch, tmp_path):
-    """The control: the refusal happens on this side of the client."""
+def test_undo_binding_gate_precedes_a_missing_revert_route(monkeypatch, tmp_path):
+    """The gate is the first refusal, before even the menu-route boundary."""
     monkeypatch.setattr(live, "SHOT_DIR", tmp_path / "shots")
     gui = harness.Harness(monkeypatch, menu_routes={"save": SAVE_ROUTE})  # no revert route
     tree = write_tree(tmp_path / "tree.spm")
     snap = harness.seed_snapshot(tree, "5")  # controlled fixture
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "the restored file stays"
-    assert snap.is_file(), "history is retained for the documented retry"
-    assert payload["dispatch"] == "not_dispatched"
-    assert payload["no_dispatch_proof"]["execute_entered"] is False
-    assert payload["file_restored"] is True
-    assert payload["history_retained"] is True
-    assert payload["gui_state"] == "unknown"
+    assert payload["error"] == "active_document_binding_unverified"
+    assert payload["disk_mutation"] is False
+    assert payload["history_mutation"] is False
+    assert payload["reload_dispatch"] is False
+    assert length(tree) == "2", "the file is never restored"
+    assert snap.is_file(), "the snapshot is retained"
     assert gui.transport.action_keys() == [], "no reload was attempted"
 
 
 # --- undo / revert -------------------------------------------------------------
 
 
-def test_undo_wrapper_reports_the_disk_restore_without_claiming_the_application(gui, tmp_path):
+def test_undo_wrapper_reports_the_refusal_without_an_effect_claim(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
     harness.seed_snapshot(tree, "5")  # controlled fixture, not an apply
     result = run_wrapper("live_undo.py", gui.session, path=str(tree), settle_seconds=0)
-    assert length(tree) == "5", "the disk restore is a real, external fact"
+    assert result["success"] is False
+    assert length(tree) == "2", "no disk restore is a real, external fact"
     message = result["message"].lower()
     assert "undone and reloaded" not in message
-    assert "unverified" in message, "the Modeler effect is not claimed"
-    assert "snapshot is retained" in message
-    assert result["context"]["verification"]["status"] == "unknown"
+    assert "restored" not in message
+    assert "refuses" in message
+    assert result["error"] == "active_document_binding_unverified"
+    assert result["context"]["disk_mutation"] is False
+    assert result["context"]["history_mutation"] is False
+    assert result["context"]["reload_dispatch"] is False
 
 
-def test_undo_keeps_the_snapshot_for_both_uncertain_forms(gui, tmp_path):
+def test_undo_keeps_the_snapshot_for_every_uncertain_dispatch_form(gui, tmp_path):
+    """No delivery outcome can unlock undo without a bound-document observation."""
     tree = write_tree(tmp_path / "tree.spm")
     harness.seed_snapshot(tree, "5")  # controlled fixture
     for outcome in ("post_invalidated", "partial", "transport_error"):
         gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: outcome}
         payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
-        assert length(tree) == "5", f"{outcome}: the disk restore stays"
-        assert len(list(live._snapshots(tree))) == 1, f"{outcome}: the backup must survive"
-        assert payload["history_retained"] is True
+        assert payload["error"] == "active_document_binding_unverified", outcome
+        assert length(tree) == "2", f"{outcome}: the file stays"
+        assert len(list(live._snapshots(tree))) == 1, f"{outcome}: the backup survives"
+        assert payload["disk_mutation"] is False
+        assert gui.transport.action_keys() == [], outcome
 
 
 def test_revert_structured_false_is_refused_and_not_reported_as_reloaded(gui):

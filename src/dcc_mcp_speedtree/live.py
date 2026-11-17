@@ -82,12 +82,23 @@ adapter capability gap (``save_effect_verifier: NOT_AVAILABLE``) -- not as a
 statement about the public protocol or another host. No automatic retry and no
 synthesized acknowledgement are produced.
 
+``undo`` is FAIL-CLOSED on the implemented route. Its admission gate requires
+the FULL canonical document path to be bound to the exact scoped-target
+observation before any history read, disk replacement, reload dispatch or output
+work. The pixels-only status contract declares ``active_document_path: False``
+and ``active_document_verified: False`` and exposes no such observation, so a
+window title / basename, a caller flag, a transport fixture, a file timestamp or
+a content hash can never bind the caller's path to the bound window; undo
+therefore refuses with ``error=active_document_binding_unverified`` before any
+mutation. The guarded restore/reload transaction engine is retained below that
+gate for a route that does provide a real process/document-bound observation --
+it is NOT a completed live feature on this route. Apply keeps its own earlier
+save-prerequisite refusal; the two gates are separate.
+
 These are limited guarantees: after a reload that was not delivered the Modeler
-GUI state is UNKNOWN; ``undo`` restores the file on disk and delivers the
-reload but keeps the only history snapshot instead of spending it on an
-unverified effect; the active document is read from the bound window title and
-is NOT verified; and a modal dialog cannot be observed in ``pixels_only`` mode.
-No controlled fake counts as native GUI acceptance.
+GUI state is UNKNOWN; the active document is read from the bound window title
+and is NOT verified; and a modal dialog cannot be observed in ``pixels_only``
+mode. No controlled fake counts as native GUI acceptance.
 """
 
 from __future__ import annotations
@@ -585,6 +596,148 @@ def _require_active(bounded, src: Path):
     return target["process_id"]
 
 
+# The implemented pixels-only route reports the active document ONLY as a
+# best-effort name parsed from the bound window title. Its own status contract
+# (trusted_session.BoundedLiveSession.status) declares both
+# ``active_document_path: False`` and ``active_document_verified: False``. There
+# is no formal supported interface here that returns the FULL canonical path of
+# the document open in the exact bound window: no process/document-bound
+# acknowledgement, no source-bound observation, and no typed DCC document
+# identity. A full caller path therefore cannot be bound to the scoped target.
+# This is an ADAPTER capability gap on the pixels-only route, not a claim that
+# the public DCC-CUA protocol or another host lacks document/save semantics.
+ACTIVE_DOCUMENT_BINDING_UNAVAILABLE = {
+    "established": False,
+    "method": "none",
+    "authority": "none",
+    "required": "full canonical active-document path bound to the exact scoped target",
+    "route": "owned_mcp_pixels / pixels_only",
+    "capabilities": {
+        "active_document_path": False,
+        "active_document_from_title": True,
+        "active_document_verified": False,
+    },
+    "reason": (
+        "The scoped-target status exposes only a best-effort document name from "
+        "the window title and declares no verified full active-document path. A "
+        "basename, caller flag, transport fixture, file timestamp or content hash "
+        "cannot bind the caller's full path to the document open in this exact "
+        "window."
+    ),
+}
+
+
+def _bound_document_observation(state, src: Path):
+    """A source-bound full-path observation of the scoped target, if one exists.
+
+    ``state`` is the ONE fresh exact-target observation returned by the trusted
+    session's ``status()``. Any admissible evidence must come FROM THAT
+    OBSERVATION, carry the FULL canonical document path, be bound to the exact
+    scoped target (its ``scope``, ``target`` PID/HWND, provider and runtime), and
+    positively resolve to ``src``. Concretely the route must declare BOTH
+    ``capabilities.active_document_path`` and
+    ``capabilities.active_document_verified`` as ``True`` and expose a
+    ``bound_document_path`` that resolves to ``src``; a title basename, a caller
+    flag, a transport/test attribute, a historical snapshot, a file mtime or a
+    content hash are all explicitly inadmissible.
+
+    The implemented pixels-only status declares both capabilities ``False`` and
+    exposes no such field, so this returns ``None``. This is the SINGLE extension
+    point for a project route that does provide a typed, process/document-bound
+    observation -- never a flag, grant or synthesized acknowledgement.
+    """
+    capabilities = state.get("capabilities") or {}
+    if capabilities.get("active_document_path") is not True:
+        return None
+    if capabilities.get("active_document_verified") is not True:
+        return None
+    if state.get("scope") != "exact_bound_window_only":
+        return None
+    raw = state.get("bound_document_path")
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        resolved = Path(raw).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if resolved != src:
+        return None
+    return {
+        "resolved_path": str(resolved),
+        "target": state.get("target"),
+        "scope": state.get("scope"),
+        "authority": "scoped_target_observation",
+        "established": True,
+    }
+
+
+def _require_bound_document(bounded, src: Path):
+    """Gate a dependent mutation on a source-bound full active-document path.
+
+    ``require_target`` must already have validated the explicit PID BEFORE this
+    read. The FULL canonical requested path has to be bound to ONE fresh
+    observation of the exact scoped target before any disk/history mutation or
+    reload. The pixels-only route has no such observation, so this refuses with
+    ``active_document_binding_unverified`` and never reaches the transaction.
+    """
+    state = bounded.status()
+    observation = _bound_document_observation(state, src)
+    if not observation or observation.get("resolved_path") != str(src):
+        raise _active_document_binding_unverified(state, src)
+    return observation
+
+
+def _active_document_binding_unverified(state, src: Path):
+    """Refuse a dependent mutation BEFORE any history read, disk write or reload."""
+    capabilities = state.get("capabilities") or {}
+    return LiveError(
+        {
+            "error": "active_document_binding_unverified",
+            "phase": "active_document_binding",
+            "disk_mutation": False,
+            "history_mutation": False,
+            "reload_dispatch": False,
+            "gui_state": "unknown",
+            "requested_path": str(src),
+            "scope": state.get("scope"),
+            "document_binding": dict(ACTIVE_DOCUMENT_BINDING_UNAVAILABLE),
+            "observed_capabilities": {
+                "active_document_path": capabilities.get("active_document_path"),
+                "active_document_from_title": capabilities.get("active_document_from_title"),
+                "active_document_verified": capabilities.get("active_document_verified"),
+            },
+            "adapter_capability": {
+                "active_document_path_verifier": "NOT_AVAILABLE",
+                "route": "owned_mcp_pixels / pixels_only",
+                "required_formal_interface": (
+                    "A project-route typed observation that returns the FULL canonical "
+                    "active-document path with explicit process/document binding, "
+                    "verifiable provenance and a fresh same-task observation of the "
+                    "exact bound window; the caller path must resolve to it. The "
+                    "pixels-only status contract exposes no such field."
+                ),
+                "scope": (
+                    "This adapter's implemented route has no source-bound full "
+                    "active-document path; the pixels-only client declares "
+                    "active_document_path=false and active_document_verified=false. "
+                    "This is an adapter capability gap, not a statement about the "
+                    "public DCC-CUA protocol or another host."
+                ),
+            },
+            "message": (
+                "The bound window can only report a document NAME from its title; "
+                "nothing on this route provides the full canonical path of the "
+                "document open in the exact bound window. A same-name document "
+                "elsewhere on disk cannot be ruled out, so undo refuses before "
+                "reading history, replacing the file, dispatching a reload or "
+                "creating any output. This is a reported capability gap, not a "
+                "completed live feature; no flag, timestamp or hash is accepted "
+                "as a substitute and no automatic retry is performed."
+            ),
+        }
+    )
+
+
 def status(process_id=None, *, session=None):
     """Read the exact bound window state through the server-owned typed client.
 
@@ -839,13 +992,25 @@ def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None
 def undo(path, process_id=None, settle_seconds=3.0, *, session=None):
     """Restore the file as it was before the last apply and reload it.
 
-    The history snapshot is consumed ONLY after both the atomic file restore
-    and the Modeler reload succeed. A failed reload keeps the snapshot so the
-    same undo can be retried; a failed restore keeps it as the only backup.
+    On the implemented pixels-only route this is a FAIL-CLOSED refusal: no
+    supported observation binds the FULL canonical requested path to the
+    document open in the exact bound window, so ``_require_bound_document``
+    refuses BEFORE any history read, disk replacement, reload dispatch or
+    output work. A same-basename document in another directory cannot be
+    excluded by a window title, and no caller flag, transport attribute, file
+    timestamp, content hash or historical snapshot is accepted as a substitute.
+
+    The transaction code below the gate is retained for a route that does
+    provide a real process/document-bound observation: the history snapshot is
+    consumed ONLY after both the atomic file restore and the Modeler reload
+    succeed, a failed reload keeps the snapshot so the same undo can be retried,
+    and a failed restore keeps it as the only backup. It is NOT a completed
+    live feature on the pixels-only route.
     """
     bounded = _require_session(session)
     bounded.require_target(process_id)  # before any native read, path, history or output work
     src = Path(path).resolve(strict=True)
+    _require_bound_document(bounded, src)  # refuse before ANY mutation / reload
     pid = _require_active(bounded, src)
     snaps = _snapshots(src)
     if not snaps:
