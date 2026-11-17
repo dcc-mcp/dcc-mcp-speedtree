@@ -17,6 +17,11 @@ def main(path, process_id=None, settle_seconds=3.0, **kwargs):
         error = payload.pop("error", "live_failed")
         payload.pop("message", None)  # str(exc) already supplies the message
         return skill_error(str(exc), error, **payload)
+    # Reached only on a route whose scoped-target observation supplies a verified
+    # FULL canonical active-document path. On the implemented pixels-only route
+    # ``live.undo`` raises ``active_document_binding_unverified`` first, so the
+    # ``except`` branch above always wins; this is the guarded engine, not a
+    # claim that undo restores a file here.
     known = (
         f"Restored {result.get('restored')} from the history snapshot over {result.get('path')} "
         "on disk and delivered the reload command."

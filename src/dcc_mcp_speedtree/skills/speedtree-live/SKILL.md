@@ -46,10 +46,18 @@ Without the trusted server-owned session every entry fails closed with
    delivered (`success` / `delivery_completed` / `post_dispatch_validated` not
    all true) is refused. Neither entry claims that the document was saved or that
    the Modeler reloaded it, and a fresh PNG is not proof of either.
-4. `live_undo` restores the file **on disk** from the newest history snapshot and
-   delivers the reload command. The disk restore is real; the snapshot is **kept**
-   until a supported reload confirmation exists, and the reload effect stays
-   unverified.
+4. `live_undo` — **not available as a disk restore on the implemented
+   pixels-only adapter.** It returns `error=active_document_binding_unverified`
+   **before** any history read, disk replacement, reload dispatch or output work,
+   because the scoped-target observation only reports a best-effort document name
+   from the window title and exposes no verified full canonical path bound to the
+   exact PID/HWND. A same-name document elsewhere cannot be ruled out, and no
+   caller flag, title basename, transport fixture, file timestamp, content hash
+   or seeded history snapshot is accepted as a substitute. Do not present this
+   entry as working, do not retry it automatically, and do not substitute a file
+   check for the missing observation. This is a reported adapter capability gap,
+   not full real-time co-design acceptance and not a claim that the public
+   protocol or another host lacks document semantics.
 5. `live_apply` — **not available as an edit on the implemented pixels-only
    adapter.** It returns `error=save_prerequisite_unverified`
    **before** any dependent business-file edit, history snapshot or reload,
