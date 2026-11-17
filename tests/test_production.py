@@ -6,6 +6,7 @@ it is not evidence of Modeler rendering, exported geometry, or visual quality.
 
 import gzip
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -155,6 +156,32 @@ def test_identical_dependency_references_are_deduplicated(production_input, tmp_
     result = generate_project(source, tmp_path / "deduplicated", operations, brief)
     manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
     assert [item["path"] for item in manifest["dependencies"]] == ["textures/leaf.png"]
+
+
+@pytest.mark.parametrize(
+    "dependency",
+    ["reference.spm.", "reference.spm ", "textures./leaf.png", "textures /leaf.png"],
+)
+def test_dependency_windows_aliases_are_rejected_before_publication(
+    production_input, tmp_path, dependency
+):
+    source, operations, brief = production_input
+    original = source.read_bytes()
+    alias = source.parent / dependency
+    if os.name == "nt" and dependency.startswith(source.name):
+        assert alias.samefile(source), "the regression must exercise an actual Windows alias"
+    elif os.name != "nt":
+        alias.parent.mkdir(parents=True, exist_ok=True)
+        alias.write_bytes(original if dependency.startswith(source.name) else b"alias asset")
+    brief["dependencies"] = [dependency]
+    output = tmp_path / "alias-output"
+
+    with pytest.raises(ValueError, match="trailing"):
+        generate_project(source, output, operations, brief)
+
+    assert not output.exists()
+    assert source.read_bytes() == original
+    assert (source.parent / "textures/leaf.png").read_bytes() == b"synthetic texture dependency"
 
 
 def test_missing_texfilename_fails_without_partial_output(production_input, tmp_path):
