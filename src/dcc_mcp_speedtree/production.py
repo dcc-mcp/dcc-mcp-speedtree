@@ -58,7 +58,7 @@ def _relative(value):
     if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("Dependency path must be a nonempty relative path")
     win = PureWindowsPath(value)
-    if win.is_absolute() or win.drive or any(part in ("..", ".") for part in win.parts):
+    if win.is_absolute() or win.drive or win.root or any(part in ("..", ".") for part in win.parts):
         raise ValueError(f"Dependency path must stay inside the reference directory: {value}")
     # Win32 can resolve these spellings to a different, already staged name.
     if any(part.endswith((".", " ")) for part in win.parts):
