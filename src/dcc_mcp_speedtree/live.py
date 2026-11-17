@@ -1,104 +1,25 @@
-"""Live design loop with a SpeedTree Modeler window the user is watching (Windows only).
+"""Bound Modeler observation and limited project-owned physical commands.
 
-The Modeler has no scripting API, so changes go through the file on disk: save the
-open document, keep a history copy, rewrite the file with ``edit_graph`` and make
-the Modeler reload it with File > Revert to saved.
+The adapter uses the project's dcc-cua / DCC-MCP ui-control route only. Core's
+public PixelsMcpHostClient owns the integrity-pinned runtime, exact PID/HWND,
+real Host-authorized task and its connection. No raw PowerShell, UI Automation,
+posted-key or PrintWindow bridge is shipped. Every entry requires the concrete
+server-owned session; tool JSON and environment values never grant authority.
 
-UI observation and input go through the project's dcc-cua / DCC-MCP ui-control
-route only. The raw PowerShell / UI Automation / posted-keys / PrintWindow
-bridge that used to drive the Modeler (``live.ps1``) has been REMOVED from the
-source tree and from the package: it enumerated windows itself, posted messages
-straight into the target and captured it with PrintWindow, bypassing every
-authorization boundary in the project.
+The implemented pixels-only session exposes an unverified document name from
+the window title, not a typed full-document identity or save postcondition.
+Consequently save, apply and undo refuse with active_document_binding_unverified
+BEFORE Save input, file/history changes, reload or output creation. There is no
+adapter-defined positive proof format: dictionary paths, capability booleans,
+timestamps and hashes cannot unlock these entries. This is an adapter capability
+gap, not a statement that Core or another provider lacks semantic APIs.
 
-The replacement is Core 0.20.44's public trusted runtime path:
-``UiControlRuntimeOptions`` carries one integrity-pinned dcc-cua binary, one
-exact PID/HWND and a bounded action ceiling; ``PixelsMcpHostClient`` owns the
-single stdio task and the runtime-issued ``task_id``; ``HostExecutionBridge``
-carries the reviewed in-process execution route. The adapter server owns that
-client and injects one bounded typed view (``BoundedLiveSession``) into the
-seven ``speedtree-live`` entries. Menu operations are delivered as authorized
-physical input against a FRESH native observation, and Core reports their
-``effect`` as ``unverifiable``, which is propagated instead of being claimed as
-success. See ``trusted_session.py`` and ``docs/ui-control-bootstrap.md``.
-
-Every entry requires that server-owned session. Without it they fail closed
-with ``error=no_authorized_ui_route`` before any SPM write, history-snapshot
-deletion, physical action or output directory creation. Nothing is read from
-tool JSON, ``os.environ`` or a business caller's ad-hoc environment; the adapter
-never mints a grant, never copies an opaque ID between connections and never
-trusts a self-reported authorization marker.
-
-``apply`` / ``undo`` separate the on-disk atomic mutation from the Modeler
-reload and the later screenshot observation. Each file swap stages its content
-in a fresh private directory beside the target, so older recovery material is
-never overwritten or removed, and a cleanup residue is reported by its real path
-instead of being mistaken for undo history. A reload failure restores the user's
-saved file and returns a structured retryable receipt; ``undo`` consumes its
-history only after the reload is confirmed; a screenshot failure after a
-successful reload is observation loss only, never a rollback.
-
-Delivery and effect are reported as two different facts. A menu command the
-runtime did not confirm as delivered -- ``success``, ``delivery_completed`` and
-``post_dispatch_validated`` must each be exactly ``True``; a structured false is
-a failure even though Core raises nothing -- is refused, and ``apply`` checks
-the save BEFORE any history copy, staged edit or disk write. A command that was
-delivered still reports ``verification.status = "unknown"``: the runtime reports
-the action's ``effect`` as ``unverifiable`` and the only same-task observations
-are native pixels and window state, neither of which proves the Modeler applied
-it. A fresh screenshot after the action is observation, not effect
-verification. Nothing here sets ``effect = "verified"`` and no self-reported
-flag, grant or environment switch is introduced.
-
-Compensation is gated on what is positively KNOWN, not on the absence of
-success. Every delivery carries a ``dispatch`` classification --
-``delivered``, ``not_dispatched``, ``delivered_unverified``, ``partial`` or
-``unknown_dispatch``. A false ``delivery_completed`` is NOT proof that nothing
-was sent: the runtime's physical input fence accumulates requested and inserted
-events and keeps that flag false until every dispatch, cleanup and post-check
-passes, so a partial insertion reports false while real input already reached
-the window. ``not_dispatched`` therefore requires affirmative evidence -- an
-adapter-owned boundary that refused before ``execute`` was entered, or the
-runtime's own action-stage fields (a pre-dispatch phase, no action attempted, or
-no input sent, with completion known and the effect not unknown). ``apply``
-rolls the edit back only for that state; a delivered-but-unvalidated reload, a
-partial insertion, a timeout or an unclassified transport error keeps BOTH the
-edit on disk and the only history snapshot and is reported as
-``reload_effect_unknown``, because the Modeler may already have executed it and
-a blind rollback would destroy the user's own edit and only recovery copy.
-Classification never comes from a self-reported flag or a transport label.
-
-``apply`` additionally REFUSES its dependent destructive phase whenever the SAVE
-PREREQUISITE is not source-bound-confirmed, which on the implemented pixels-only
-route means always. Delivery of the save is not enough, and neither is a file
-observation: a changed mtime or a changed content hash proves the disk changed,
-not that the bound Modeler saved its current GUI edits into the requested
-document, because another process, the user, an autosave or a plain metadata
-touch looks identical. The file observation is therefore reported as a
-diagnostic with ``authority: none`` and never licenses the edit, the history
-snapshot or the reload. The refusal happens before any of them, with
-``disk_mutation`` and ``history_mutation`` false, and the gap is named as an
-adapter capability gap (``save_effect_verifier: NOT_AVAILABLE``) -- not as a
-statement about the public protocol or another host. No automatic retry and no
-synthesized acknowledgement are produced.
-
-``undo`` is FAIL-CLOSED on the implemented route. Its admission gate requires
-the FULL canonical document path to be bound to the exact scoped-target
-observation before any history read, disk replacement, reload dispatch or output
-work. The pixels-only status contract declares ``active_document_path: False``
-and ``active_document_verified: False`` and exposes no such observation, so a
-window title / basename, a caller flag, a transport fixture, a file timestamp or
-a content hash can never bind the caller's path to the bound window; undo
-therefore refuses with ``error=active_document_binding_unverified`` before any
-mutation. The guarded restore/reload transaction engine is retained below that
-gate for a route that does provide a real process/document-bound observation --
-it is NOT a completed live feature on this route. Apply keeps its own earlier
-save-prerequisite refusal; the two gates are separate.
-
-These are limited guarantees: after a reload that was not delivered the Modeler
-GUI state is UNKNOWN; the active document is read from the bound window title
-and is NOT verified; and a modal dialog cannot be observed in ``pixels_only``
-mode. No controlled fake counts as native GUI acceptance.
+Status and fresh capture remain available. Revert can deliver its explicitly
+authorized physical command; delivery is distinct from its unverified effect.
+Partial input and unknown completion never establish that nothing was sent.
+The retained transaction/recovery engine below the document gate is unreachable
+on the implemented route and is not completed live co-design. Controlled tests
+of these boundaries do not establish native Modeler acceptance.
 """
 
 from __future__ import annotations
@@ -627,68 +548,20 @@ ACTIVE_DOCUMENT_BINDING_UNAVAILABLE = {
 }
 
 
-def _bound_document_observation(state, src: Path):
-    """A source-bound full-path observation of the scoped target, if one exists.
+def _require_bound_document(bounded, src=None):
+    """Refuse document-dependent actions unsupported by the current adapter.
 
-    ``state`` is the ONE fresh exact-target observation returned by the trusted
-    session's ``status()``. Any admissible evidence must come FROM THAT
-    OBSERVATION, carry the FULL canonical document path, be bound to the exact
-    scoped target (its ``scope``, ``target`` PID/HWND, provider and runtime), and
-    positively resolve to ``src``. Concretely the route must declare BOTH
-    ``capabilities.active_document_path`` and
-    ``capabilities.active_document_verified`` as ``True`` and expose a
-    ``bound_document_path`` that resolves to ``src``; a title basename, a caller
-    flag, a transport/test attribute, a historical snapshot, a file mtime or a
-    content hash are all explicitly inadmissible.
-
-    The implemented pixels-only status declares both capabilities ``False`` and
-    exposes no such field, so this returns ``None``. This is the SINGLE extension
-    point for a project route that does provide a typed, process/document-bound
-    observation -- never a flag, grant or synthesized acknowledgement.
+    The concrete pixels session has no typed full-document observation. Its
+    status is diagnostic only; dictionaries, path strings and capability flags
+    cannot create a new proof contract. A real provider integration requires a
+    separately reviewed implementation using its existing typed contract.
+    ``require_target`` must validate the PID before this read.
     """
-    capabilities = state.get("capabilities") or {}
-    if capabilities.get("active_document_path") is not True:
-        return None
-    if capabilities.get("active_document_verified") is not True:
-        return None
-    if state.get("scope") != "exact_bound_window_only":
-        return None
-    raw = state.get("bound_document_path")
-    if not isinstance(raw, str) or not raw:
-        return None
-    try:
-        resolved = Path(raw).resolve(strict=True)
-    except (OSError, RuntimeError):
-        return None
-    if resolved != src:
-        return None
-    return {
-        "resolved_path": str(resolved),
-        "target": state.get("target"),
-        "scope": state.get("scope"),
-        "authority": "scoped_target_observation",
-        "established": True,
-    }
+    raise _active_document_binding_unverified(bounded.status(), src)
 
 
-def _require_bound_document(bounded, src: Path):
-    """Gate a dependent mutation on a source-bound full active-document path.
-
-    ``require_target`` must already have validated the explicit PID BEFORE this
-    read. The FULL canonical requested path has to be bound to ONE fresh
-    observation of the exact scoped target before any disk/history mutation or
-    reload. The pixels-only route has no such observation, so this refuses with
-    ``active_document_binding_unverified`` and never reaches the transaction.
-    """
-    state = bounded.status()
-    observation = _bound_document_observation(state, src)
-    if not observation or observation.get("resolved_path") != str(src):
-        raise _active_document_binding_unverified(state, src)
-    return observation
-
-
-def _active_document_binding_unverified(state, src: Path):
-    """Refuse a dependent mutation BEFORE any history read, disk write or reload."""
+def _active_document_binding_unverified(state, src=None):
+    """Report unsupported document identity before Save or dependent effects."""
     capabilities = state.get("capabilities") or {}
     return LiveError(
         {
@@ -696,9 +569,10 @@ def _active_document_binding_unverified(state, src: Path):
             "phase": "active_document_binding",
             "disk_mutation": False,
             "history_mutation": False,
+            "save_dispatch": False,
             "reload_dispatch": False,
             "gui_state": "unknown",
-            "requested_path": str(src),
+            "requested_path": str(src) if src is not None else None,
             "scope": state.get("scope"),
             "document_binding": dict(ACTIVE_DOCUMENT_BINDING_UNAVAILABLE),
             "observed_capabilities": {
@@ -709,7 +583,7 @@ def _active_document_binding_unverified(state, src: Path):
             "adapter_capability": {
                 "active_document_path_verifier": "NOT_AVAILABLE",
                 "route": "owned_mcp_pixels / pixels_only",
-                "required_formal_interface": (
+                "required_capability": (
                     "A project-route typed observation that returns the FULL canonical "
                     "active-document path with explicit process/document binding, "
                     "verifiable provenance and a fresh same-task observation of the "
@@ -728,8 +602,8 @@ def _active_document_binding_unverified(state, src: Path):
                 "The bound window can only report a document NAME from its title; "
                 "nothing on this route provides the full canonical path of the "
                 "document open in the exact bound window. A same-name document "
-                "elsewhere on disk cannot be ruled out, so undo refuses before "
-                "reading history, replacing the file, dispatching a reload or "
+                "elsewhere on disk cannot be ruled out, so this adapter refuses "
+                "save, apply and undo before Save input, history access, file replacement, reload or "
                 "creating any output. This is a reported capability gap, not a "
                 "completed live feature; no flag, timestamp or hash is accepted "
                 "as a substitute and no automatic retry is performed."
@@ -795,29 +669,10 @@ def open_recent(path, process_id=None, *, session=None):
 
 
 def save(process_id=None, *, session=None):
-    """Ask the Modeler to save the active document (File > Save).
-
-    A delivery the runtime did not confirm is a failure: it is refused instead
-    of being reported as a save. A confirmed delivery still does NOT report the
-    document as saved: the effect is unverifiable and this entry has no path to
-    observe, so the missing verifier is named instead of being filled in.
-    """
+    """Refuse Save before input while reliable document identity is unavailable."""
     bounded = _require_session(session)
     bounded.require_target(process_id)  # before any native read or output work
-    result = bounded.menu("save")
-    if not _delivery_confirmed(result):
-        raise _delivery_failure("save", result)
-    result["effect_verifier"] = {
-        "status": "NOT_AVAILABLE",
-        "route": "owned_mcp_pixels / pixels_only",
-        "note": (
-            "This adapter's implemented route has no supported same-task verifier for "
-            "the save effect. The delivery is reported and the effect is not claimed; "
-            "this is an adapter capability gap, not a statement about the public "
-            "DCC-CUA protocol or another host."
-        ),
-    }
-    return result
+    _require_bound_document(bounded)
 
 
 def revert(process_id=None, settle_seconds=3.0, shot=True, *, session=None):
@@ -863,30 +718,17 @@ def _reload_and_observe(bounded, settle_seconds):
 
 
 def apply(path, operations, process_id=None, settle_seconds=3.0, *, session=None):
-    """Deliver the save, then REFUSE the dependent edit on this route.
+    """Refuse before Save, file/history mutation or reload on this adapter.
 
-    The dependent edit may only run once a source-bound save confirmation exists:
-    a project-route acknowledgement with explicit application semantics, correct
-    process/document binding and verifiable provenance proving that the bound
-    Modeler saved its current GUI edits into THIS document. The implemented
-    pixels-only client reports the save effect as ``unverifiable`` and exposes no
-    such confirmation, so the prerequisite is unknown on every call and the
-    business-file edit, the history snapshot and the reload are all refused before
-    any of them start.
-
-    A file observation is still taken either side of the delivered save, but it is
-    reported as a DIAGNOSTIC ONLY: a changed mtime or a changed content hash shows
-    that the disk changed, not that the bound Modeler saved into this document --
-    another process, the user, an autosave or a metadata touch looks identical.
-    It therefore never licenses the dependent phase, and no timestamp, hash
-    delta, transport label or caller-supplied value may replace it.
-
-    A save delivery the runtime did not confirm is refused earlier still, with the
-    same guarantee: no disk, history or output mutation.
+    Full document identity and a source-bound save postcondition are unavailable
+    on its pixels-only route. The retained transaction below the guard is not a
+    completed live feature. No basename, dictionary, flag, timestamp or hash may
+    substitute for the missing provider contract.
     """
     bounded = _require_session(session)
     bounded.require_target(process_id)  # before any native read, path, history or output work
     src = Path(path).resolve(strict=True)
+    _require_bound_document(bounded, src)
     pid = _require_active(bounded, src)
     # Diagnostic only -- see the docstring. It is not the prerequisite.
     before = _file_state(src)

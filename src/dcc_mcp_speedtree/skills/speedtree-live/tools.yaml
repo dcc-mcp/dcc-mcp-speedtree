@@ -1,6 +1,6 @@
 tools:
 - name: live_status
-  description: List running SpeedTree Modeler windows with active document, open dialog and File > Recents.
+  description: Read the exact bound Modeler window state and unverified document name. This pixels-only route exposes no full document path, accessibility tree or observable modal dialog.
   source_file: scripts/live_status.py
   execution: sync
   affinity: any
@@ -46,7 +46,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_save
-  description: Deliver the configured save command to the bound Modeler window and report the delivery. The application effect is reported UNVERIFIED/UNKNOWN; this is not a confirmation that the document was saved.
+  description: Unsupported on the implemented pixels-only adapter, returning error=active_document_binding_unverified before Save input, file/history mutation, reload or output work. No reliable full-document identity or save postcondition is available there. Caller flags, custom dictionaries, timestamps and hashes cannot unlock it. This refusal is not completed live co-design.
   source_file: scripts/live_save.py
   execution: sync
   affinity: any
@@ -75,7 +75,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_apply
-  description: On the implemented pixels-only adapter this returns error=save_prerequisite_unverified BEFORE any dependent business-file edit, history snapshot or reload, because no formal process/document-bound save confirmation exists there, even when the file mtime or content hash changes. Not full real-time co-design acceptance; the edit and reload path runs only on a route that provides such a confirmation.
+  description: Unsupported on the implemented pixels-only adapter, returning error=active_document_binding_unverified before Save input, file/history mutation, reload or output work. No reliable full-document identity or save postcondition is available there. Caller flags, custom dictionaries, timestamps and hashes cannot unlock it. This refusal is not completed live co-design.
   source_file: scripts/live_apply.py
   execution: sync
   affinity: any
@@ -97,7 +97,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_undo
-  description: On the implemented pixels-only adapter this returns error=active_document_binding_unverified BEFORE any history read, disk replacement, reload dispatch or output work, because the scoped-target observation exposes no verified full canonical active-document path bound to the exact PID/HWND. A same-name document elsewhere cannot be excluded; no caller flag, title basename, transport fixture, timestamp, hash or seeded snapshot is accepted as a substitute. Not full real-time co-design acceptance; the guarded restore/reload runs only on a route that provides such a typed observation. No claim that the Modeler shows a restored state.
+  description: Unsupported on the implemented pixels-only adapter, returning error=active_document_binding_unverified before Save input, file/history mutation, reload or output work. No reliable full-document identity or save postcondition is available there. Caller flags, custom dictionaries, timestamps and hashes cannot unlock it. This refusal is not completed live co-design.
   source_file: scripts/live_undo.py
   execution: sync
   affinity: any

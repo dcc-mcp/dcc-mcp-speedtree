@@ -36,9 +36,9 @@ def test_apply_refuses_when_the_save_delivery_is_not_completed(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
     gui.transport.delivery_success = False  # a bare false flag, i.e. a partial
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert payload["error"] == "save_not_confirmed"
-    assert payload["delivery_completed"] is False
-    assert payload["dispatch"] == "partial", "a false flag is not a proved non-dispatch"
+    assert payload["error"] == "active_document_binding_unverified"
+    assert payload["save_dispatch"] is False
+    assert gui.transport.action_keys() == []
     assert length(tree) == "2", "no edit may be written on an unconfirmed save"
     assert not live._history(tree).exists(), "no history may be created"
     assert not list(tmp_path.glob(".live_*"))
@@ -57,9 +57,9 @@ def test_apply_creates_no_history_and_sends_no_reload(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree)
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert payload["error"] == "save_prerequisite_unverified"
+    assert payload["error"] == "active_document_binding_unverified"
     assert not live._history(tree).exists(), "no history may be created"
-    assert gui.transport.action_keys() == ["ctrl+s"], "no reload is delivered"
+    assert gui.transport.action_keys() == [], "neither Save nor reload is delivered"
 
 
 def test_undo_refuses_before_the_history_and_reload_boundaries(gui, tmp_path):

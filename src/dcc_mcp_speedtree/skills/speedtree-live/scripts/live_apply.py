@@ -5,6 +5,7 @@ from dcc_mcp_speedtree import live
 
 @skill_entry
 def main(path, operations, process_id=None, settle_seconds=3.0, **kwargs):
+    # The current adapter refuses before input; propagate its capability error.
     try:
         result = live.apply(
             path,

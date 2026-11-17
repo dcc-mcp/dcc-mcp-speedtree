@@ -133,7 +133,7 @@ def test_menu_actions_require_runtime_authorization(monkeypatch, tmp_path):
     monkeypatch.setattr(live, "SHOT_DIR", tmp_path / "shots")
     read_only = harness.Harness(monkeypatch, allowed_actions=())
     assert read_only.session.status()["capabilities"]["ui_input"] is False
-    payload = payload_of(live.save, session=read_only.session)
+    payload = payload_of(read_only.session.menu, "save")
     assert payload["error"] == "unauthorized_action"
     assert payload["allowed_actions"] == []
     assert read_only.transport.methods().count("execute_action") == 0

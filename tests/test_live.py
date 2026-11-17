@@ -70,19 +70,17 @@ def test_apply_refuses_the_dependent_write_without_a_source_bound_save(gui, tmp_
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree)  # even a fixture disk write must not unlock the edit
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert payload["error"] == "save_prerequisite_unverified"
+    assert payload["error"] == "active_document_binding_unverified"
     assert payload["disk_mutation"] is False
     assert payload["history_mutation"] is False
-    assert payload["save_postcondition"]["established"] is False
-    assert payload["save_postcondition"]["method"] == "none"
-    assert payload["save_postcondition"]["authority"] == "none"
-    assert payload["adapter_capability"]["save_effect_verifier"] == "NOT_AVAILABLE"
-    # External facts: only the fixture's own write is on disk, and nothing else.
-    assert length(tree) == "13", "the adapter must not edit the file to 9"
+    assert payload["save_dispatch"] is False
+    assert payload["document_binding"]["established"] is False
+    assert payload["adapter_capability"]["active_document_path_verifier"] == "NOT_AVAILABLE"
+    assert length(tree) == "2", "even the fixture's Save must never be dispatched"
     assert not live._history(tree).exists(), "no history may be created"
     assert not list(live._snapshots(tree))
     assert not list(tmp_path.glob(".live_*"))
-    assert gui.transport.action_keys() == ["ctrl+s"], "the reload is never attempted"
+    assert gui.transport.action_keys() == []
 
 
 def test_undo_refuses_without_bound_document_and_preserves_file_and_backup(gui, tmp_path):
@@ -113,11 +111,10 @@ def test_undo_refuses_without_bound_document_and_preserves_file_and_backup(gui, 
     assert length(tree) == "2"
 
 
-def test_save_and_revert_report_the_unverifiable_effect(gui):
-    saved = live.save(session=gui.session)
-    assert saved["menu"] == "save"
-    assert saved["effect"] == "unverifiable"
-    assert saved["verification_required"] is True
+def test_save_refuses_and_revert_reports_the_unverifiable_effect(gui):
+    saved = payload_of(live.save, session=gui.session)
+    assert saved["error"] == "active_document_binding_unverified"
+    assert gui.transport.action_keys() == []
     reverted = live.revert(settle_seconds=0, shot=False, session=gui.session)
     assert reverted["menu"] == "revert"
     assert reverted["effect"] == "unverifiable"
@@ -130,9 +127,9 @@ def test_apply_refuses_when_the_bound_window_shows_another_document(monkeypatch,
     with pytest.raises(live.LiveError) as raised:
         live.apply(tree, SET_LENGTH, settle_seconds=0, session=other.session)
     payload = raised.value.payload
-    assert payload["error"] == "not_active"
-    assert payload["active_document"] == "other.spm"
-    assert payload["active_document_verified"] is False
+    assert payload["error"] == "active_document_binding_unverified"
+    assert payload["document_binding"]["established"] is False
+    assert other.transport.action_keys() == []
     assert not list(tmp_path.rglob("_live_history"))
 
 
@@ -141,9 +138,8 @@ def test_a_refused_apply_never_reaches_the_edit(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree)
     payload = payload_of(live.apply, tree, BAD_EDIT, settle_seconds=0, session=gui.session)
-    assert payload["error"] == "save_prerequisite_unverified"
-    # Only the fixture's own write is on disk; no history and no stage survive.
-    assert length(tree) == "13"
+    assert payload["error"] == "active_document_binding_unverified"
+    assert length(tree) == "2"
     assert not list(live._snapshots(tree))
     assert not list(tmp_path.glob(".live_*"))
 
