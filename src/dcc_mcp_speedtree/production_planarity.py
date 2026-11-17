@@ -120,7 +120,8 @@ def validate_card_planes(full_obj, material_categories, tolerance=0.001):
             pending.remove(face_id)
             connected.append(face_id)
             for vertex in card_faces[face_id][0]:
-                todo.extend(vertex_faces[vertex])
+                # A shared vertex must not repeatedly enqueue its whole fan.
+                todo.extend(vertex_faces.pop(vertex, ()))
         components.append(sorted(connected))
     issues = []
     if unknown:

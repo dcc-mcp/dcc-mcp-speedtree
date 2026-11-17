@@ -1,3 +1,5 @@
+import tracemalloc
+
 import pytest
 
 from dcc_mcp_speedtree.production_planarity import validate_card_planes
@@ -46,6 +48,32 @@ def test_many_interleaved_cards_keep_first_face_order(tmp_path):
     assert [item["line_numbers"] for item in result["components"]] == [
         [4 * count + 2 + n, 5 * count + 2 + n] for n in range(count)
     ]
+
+
+def test_shared_vertex_fan_does_not_accumulate_quadratic_worklist(tmp_path):
+    def validation_peak(count):
+        # Small invalid fans share one vertex. They must produce a failed report
+        # without retaining a quadratic stack before reaching that decision.
+        path = tmp_path / f"fan-{count}.obj"
+        vertices = "v 0 0 0\n" + "".join(f"v {n + 1} 0 0\nv {n + 1} 1 0\n" for n in range(count))
+        faces = "".join(f"f 1 {2 * n + 2} {2 * n + 3}\n" for n in range(count))
+        path.write_text(vertices + "usemtl card\n" + faces, encoding="utf-8")
+        tracemalloc.start()
+        try:
+            result = validate_card_planes(path, {"card": "card"})
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert result["status"] == "failed"
+        assert result["card_components"] == 1
+        assert result["card_triangles"] == count
+        return peak
+
+    small = validation_peak(128)
+    large = validation_peak(1024)
+    # Eight times as much input gets generous linear-space slack. This uses
+    # peak allocated bytes, not wall time or an intentionally exhausting mesh.
+    assert large <= 12 * small, (small, large)
 
 
 def test_folded_quad_fails_with_excess_distance(tmp_path):
