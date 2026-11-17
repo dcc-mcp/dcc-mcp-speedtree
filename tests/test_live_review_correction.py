@@ -110,9 +110,11 @@ def test_apply_wrapper_reports_the_refusal_without_an_effect_claim(gui, tmp_path
     message = result["message"].lower()
     assert "applied and reloaded" not in message
     assert "unverified" not in message.replace("unverifiable", "")
-    assert result["error"] == "save_prerequisite_unverified"
-    assert result["context"]["save_postcondition"]["established"] is False
-    assert result["context"]["adapter_capability"]["save_effect_verifier"] == "NOT_AVAILABLE"
+    assert result["error"] == "active_document_binding_unverified"
+    assert result["context"]["save_dispatch"] is False
+    assert (
+        result["context"]["adapter_capability"]["active_document_path_verifier"] == "NOT_AVAILABLE"
+    )
 
 
 def test_undo_wrapper_reports_the_refusal_without_an_effect_claim(gui, tmp_path):
@@ -141,7 +143,9 @@ def test_save_wrapper_message_does_not_claim_the_document_was_saved(gui):
     result = run_wrapper("live_save.py", gui.session)
     message = result["message"].lower()
     assert "document saved" not in message
-    assert "unverified" in message
+    assert result["success"] is False
+    assert result["error"] == "active_document_binding_unverified"
+    assert gui.transport.action_keys() == []
 
 
 def test_revert_wrapper_message_does_not_claim_reloaded(gui):
@@ -166,6 +170,6 @@ def test_read_only_session_constructs_without_menu_routes(monkeypatch, tmp_path)
 def test_read_only_session_refuses_mutating_menu_at_menu_time(monkeypatch, tmp_path):
     monkeypatch.setattr(live, "SHOT_DIR", tmp_path / "shots")
     read_only = harness.Harness(monkeypatch, allowed_actions=(), menu_routes={})
-    payload = payload_of(live.save, session=read_only.session)
+    payload = payload_of(read_only.session.menu, "save")
     assert payload["error"] == "menu_route_undeclared"
     assert read_only.transport.methods() == [], "no physical action may be attempted"

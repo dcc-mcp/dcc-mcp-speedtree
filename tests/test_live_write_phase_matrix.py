@@ -1,9 +1,9 @@
 """The write-phase / result matrix for save, apply, undo and revert.
 
-Each stage is covered for BOTH response forms -- a structured false result and
-an exception -- because neither form proves that nothing was executed: the
-runtime keeps ``delivery_completed`` false for a partial insertion too, and an
-exception can be raised after input was already inserted.
+Save/apply/undo admission precedes any command. Reachable revert delivery and
+the retained helper contracts distinguish structured false results, exceptions
+and partial insertion; none alone proves that nothing was executed. Direct
+classification/recovery checks remain in ``test_live_dispatch_contract``.
 
 The assertions are about external facts: the value actually in the file, whether
 a history snapshot exists, what the real shipped wrapper reports, and whether a
@@ -56,92 +56,73 @@ def run_wrapper(name, session, **params):
 def test_save_structured_false_is_refused_and_never_reported_as_saved(gui):
     gui.transport.delivery_success = False  # bare false flags, i.e. a partial
     payload = payload_of(live.save, session=gui.session)
-    assert payload["error"] == "save_not_confirmed"
-    assert payload["delivery_completed"] is False
-    assert payload["dispatch"] == "partial", "false flags are not a proved non-dispatch"
+    assert payload["error"] == "active_document_binding_unverified"
+    assert payload["save_dispatch"] is False
     result = run_wrapper("live_save.py", gui.session)
     assert result["success"] is False
     assert "saved" not in result["message"].lower()
-    assert result["context"]["dispatch"] == "partial"
+    assert result["context"]["save_dispatch"] is False
+    assert gui.transport.action_keys() == []
 
 
-def test_save_delivered_reports_the_unverified_effect_and_the_missing_verifier(gui):
-    saved = live.save(session=gui.session)
-    assert saved["delivery_completed"] is True
-    assert saved["effect"] == "unverifiable"
-    assert saved["effect_verifier"]["status"] == "NOT_AVAILABLE"
+def test_save_binding_gate_precedes_a_successful_delivery_fixture(gui):
+    saved = payload_of(live.save, session=gui.session)
+    assert saved["error"] == "active_document_binding_unverified"
+    assert saved["save_dispatch"] is False
     result = run_wrapper("live_save.py", gui.session)
     message = result["message"].lower()
     assert "document saved" not in message, "delivery is not the effect"
-    assert "unverified" in message
-    assert result["context"]["effect_verifier"]["status"] == "NOT_AVAILABLE"
-    assert result["context"]["verification"]["status"] == "unknown"
+    assert result["success"] is False
+    assert result["context"]["gui_state"] == "unknown"
+    assert gui.transport.action_keys() == []
 
 
-def test_save_exception_is_not_a_proved_non_dispatch(gui):
+def test_save_binding_gate_precedes_a_transport_exception(gui):
     gui.transport.fail_action_matching = {"keys": SAVE_ROUTE["keys"]}
     payload = payload_of(live.save, session=gui.session)
-    assert payload["dispatch"] == "unknown_dispatch"
-    assert payload["native_error"]["type"] == "OwnedCuaMcpError"
+    assert payload["error"] == "active_document_binding_unverified"
+    assert payload["save_dispatch"] is False
+    assert gui.transport.action_keys() == []
 
 
-# --- apply: save prerequisite --------------------------------------------------
+# --- apply: document admission ------------------------------------------------
 
 
 def test_apply_refuses_the_dependent_edit_for_every_save_fixture(gui, tmp_path):
-    """No disk change of any kind may unlock the dependent phase.
-
-    The three fixtures model the disk, not the Modeler: no change at all, an
-    mtime-only touch, and a real content change written by the fixture. A
-    timestamp proves the metadata changed and a hash proves the bytes changed;
-    neither proves the BOUND Modeler saved its current GUI edits into THIS
-    document, so all three must be refused identically.
-    """
-    for effect, expected_value, content_changed in (
-        ("none", "2", False),
-        ("touch", "2", False),
-        ("content", "13", True),
-    ):
+    """None of the three armed Save effects may run before document admission."""
+    for effect in ("none", "touch", "content"):
         folder = tmp_path / effect
         folder.mkdir()
         tree = write_tree(folder / "tree.spm")
         gui.arm_document(tree, effect=effect)
         gui.transport.calls.clear()
         payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-        assert payload["error"] == "save_prerequisite_unverified"
-        assert payload["phase"] == "save_prerequisite"
-        assert payload["dispatch"] == "delivered"
+        assert payload["error"] == "active_document_binding_unverified"
+        assert payload["phase"] == "active_document_binding"
+        assert payload["save_dispatch"] is False
         assert payload["disk_mutation"] is False
         assert payload["history_mutation"] is False
-        assert payload["save_postcondition"]["established"] is False
-        assert payload["save_postcondition"]["method"] == "none"
-        assert payload["save_postcondition"]["authority"] == "none"
-        assert payload["adapter_capability"]["save_effect_verifier"] == "NOT_AVAILABLE", (
+        assert payload["document_binding"]["established"] is False
+        assert payload["adapter_capability"]["active_document_path_verifier"] == "NOT_AVAILABLE", (
             "the gap must be named as an adapter capability, not a protocol claim"
         )
-        observation = payload["save_disk_observation"]
-        assert observation["content_changed"] is content_changed
-        assert observation["metadata_only_change"] is (effect == "touch")
-        assert observation["authority"] == "none", "a disk observation proves no save"
-        # External facts: the fixture's own write may stand, the adapter's may not.
-        assert length(tree) == expected_value, "the adapter must not edit the file to 9"
+        assert length(tree) == "2", "the gate precedes even the fixture's Save"
         assert not live._history(tree).exists(), "no history may be created"
         assert not list(live._snapshots(tree))
         assert not list(tmp_path.rglob(".live_*"))
-        assert gui.transport.action_keys() == ["ctrl+s"], "no reload may be attempted"
+        assert gui.transport.action_keys() == [], "no Save or reload may be attempted"
         json.dumps(payload)
 
 
 def test_apply_never_reaches_the_edit_even_with_a_fixture_flush(gui, tmp_path):
-    """The fixture writes 13; the adapter must leave 13 and claim nothing."""
+    """An armed fixture cannot bypass admission or flush its pending value."""
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree, pending="13", effect="content")
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert payload["error"] == "save_prerequisite_unverified"
-    assert length(tree) == "13"
-    assert payload["save_disk_observation"]["content_changed"] is True
-    assert payload["save_disk_observation"]["authority"] == "none"
-    assert payload["save_postcondition"]["established"] is False
+    assert payload["error"] == "active_document_binding_unverified"
+    assert length(tree) == "2"
+    assert payload["save_dispatch"] is False
+    assert gui.transport.action_keys() == []
     assert not live._history(tree).exists(), "no snapshot of a refused phase"
 
 
@@ -154,13 +135,17 @@ def test_apply_refusal_reaches_the_wrapper_without_an_effect_claim(gui, tmp_path
         "live_apply.py", gui.session, path=str(tree), operations=SET_LENGTH, settle_seconds=0
     )
     assert result["success"] is False
-    assert result["error"] == "save_prerequisite_unverified"
+    assert result["error"] == "active_document_binding_unverified"
     assert "applied" not in result["message"].lower()
     assert result["context"]["disk_mutation"] is False
     assert result["context"]["history_mutation"] is False
-    assert result["context"]["save_postcondition"]["established"] is False
-    assert result["context"]["save_disk_observation"]["authority"] == "none"
-    assert result["context"]["adapter_capability"]["save_effect_verifier"] == "NOT_AVAILABLE"
+    assert result["context"]["save_dispatch"] is False
+    assert result["context"]["document_binding"]["established"] is False
+    assert (
+        result["context"]["adapter_capability"]["active_document_path_verifier"] == "NOT_AVAILABLE"
+    )
+    assert length(tree) == "2"
+    assert gui.transport.action_keys() == []
 
 
 # --- apply: edit / reload ------------------------------------------------------
@@ -179,18 +164,18 @@ def test_apply_reload_uncertainty_never_reaches_the_dependent_phase(
 ):
     """The gate comes first, so no reload-uncertainty form can start an edit.
 
-    Both write entries now refuse before a reload: apply at the save
-    prerequisite, undo at the active-document binding gate. No dependent edit
+    Both write entries now refuse at the active-document binding gate.
+    No dependent edit
     or reload-uncertainty form is reachable on the pixels-only route.
     """
     tree = write_tree(tmp_path / "tree.spm")
     gui.arm_document(tree)
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: outcome}
     payload = payload_of(live.apply, tree, SET_LENGTH, settle_seconds=0, session=gui.session)
-    assert payload["error"] == "save_prerequisite_unverified"
-    assert length(tree) == "13", "no adapter edit may exist to preserve or roll back"
+    assert payload["error"] == "active_document_binding_unverified"
+    assert length(tree) == "2", "no adapter edit may exist to preserve or roll back"
     assert not live._history(tree).exists()
-    assert gui.transport.action_keys() == ["ctrl+s"]
+    assert gui.transport.action_keys() == []
 
 
 def test_undo_binding_gate_precedes_a_missing_revert_route(monkeypatch, tmp_path):

@@ -5,6 +5,7 @@ from dcc_mcp_speedtree import live
 
 @skill_entry
 def main(process_id=None, **kwargs):
+    # The current adapter refuses before input; propagate its capability error.
     try:
         result = live.save(process_id, session=kwargs.get(live.TRUSTED_SESSION_PARAM))
     except live.LiveError as exc:
