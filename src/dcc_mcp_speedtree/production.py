@@ -63,6 +63,8 @@ def _relative(value):
     # Win32 can resolve these spellings to a different, already staged name.
     if any(part.endswith((".", " ")) for part in win.parts):
         raise ValueError(f"Dependency path contains a trailing period or space: {value}")
+    if any(":" in part for part in win.parts):
+        raise ValueError(f"Dependency path contains an alternate data stream: {value}")
     return Path(*win.parts)
 
 
@@ -172,8 +174,8 @@ def generate_project(source_path, output_dir, operations, brief):
         seen[key] = str(rel)
         dependencies.append((rel, item, _hash(item)))
     if any(
-        str(rel).casefold() in {source.name.casefold(), "manifest.json"}
-        for rel, _, _ in dependencies
+        str(rel).casefold() in {source.name.casefold(), "manifest.json"} or item.samefile(source)
+        for rel, item, _ in dependencies
     ):
         raise ValueError("Dependency conflicts with the project or manifest")
     with tempfile.TemporaryDirectory(prefix=".speedtree-production-", dir=output.parent) as temp:
