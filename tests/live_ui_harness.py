@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import os
 import struct
+import tempfile
 import zlib
 from pathlib import Path
 from typing import Any
@@ -90,10 +91,24 @@ def length(path):
     return next(p for p in props if p["name"] == "Spine:Length:Absolute")["components"]["Value"]
 
 
+def host_binary_path() -> str:
+    """An absolute, NON-EXECUTED binary path for the host running the tests.
+
+    ``UiControlRuntimeOptions`` validates ``Path(binary).is_absolute()`` using
+    the HOST path flavor and deliberately does not require the artifact to exist
+    (it validates spelling only). A hard-coded ``C:/...`` was Windows-absolute
+    but NOT POSIX-absolute, so every Linux test session failed at construction.
+    Derive the path from the host's own temp directory instead: it is absolute
+    on Windows and POSIX alike. The file is never created or launched, so the
+    sha256 integrity pin and the client contract stay exactly as production.
+    """
+    return str(Path(tempfile.gettempdir()) / "dcc-cua" / "dcc-cua.exe")
+
+
 def runtime(*, allowed_actions=("keyboard_shortcut",), window_operations=(), **overrides):
     """A real ``UiControlRuntimeOptions`` with an operator-shaped absolute path."""
     values: dict[str, Any] = {
-        "binary": "C:/dcc-cua/dcc-cua.exe",
+        "binary": host_binary_path(),
         "sha256": "0" * 64,
         "runtime_version": RUNTIME_VERSION,
         "allowed_actions": tuple(allowed_actions),
