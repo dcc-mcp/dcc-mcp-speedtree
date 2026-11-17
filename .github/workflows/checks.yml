@@ -9,8 +9,10 @@ on:
   workflow_dispatch:
 
 # One run per pull request (or per ref for main pushes): a new commit supersedes
-# the queued and running jobs of that group instead of stacking stale results.
-# Runs on main are never cancelled, so the branch history stays green or red.
+# the older runs of that group instead of stacking stale results. Pull request
+# runs are cancelled whether they are queued or running. Main jobs already
+# running are allowed to finish. GitHub may still replace an older pending run
+# in the same group.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
