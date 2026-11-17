@@ -206,6 +206,12 @@ def test_project_dependency_alias_is_rejected_by_file_identity(production_input,
     assert not output.exists()
 
 
+@pytest.mark.parametrize("dependency", [r"\textures\leaf.png", "/textures/leaf.png"])
+def test_drive_less_rooted_paths_are_not_relative_dependencies(dependency):
+    with pytest.raises(ValueError, match="inside"):
+        production._relative(dependency)
+
+
 def test_missing_texfilename_fails_without_partial_output(production_input, tmp_path):
     source, operations, brief = production_input
     xml = gzip.decompress(source.read_bytes()).decode("utf-8")
