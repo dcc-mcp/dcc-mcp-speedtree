@@ -43,7 +43,6 @@ def test_registered_contracts_preserve_read_only_hints_and_packaged_scripts(tmp_
             assert action["output_schema"]["type"] == "object"
             name = action["name"]
             if name.startswith("speedtree_live__"):
-                # Live tools act on the user's open Modeler document; reloads discard GUI state.
                 reloads = name.split("__")[1] in {"live_revert", "live_apply", "live_undo"}
                 reads = name.split("__")[1] in {"live_status", "live_screenshot"}
                 assert action["annotations"]["read_only_hint"] is reads
