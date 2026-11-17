@@ -97,7 +97,7 @@ tools:
     additionalProperties: false
   output_schema: {type: object}
 - name: live_undo
-  description: Restore the file on disk from the newest history snapshot and deliver the reload command. The disk restore is real and reported; the history snapshot is kept until a supported reload confirmation exists, and the reload effect stays UNVERIFIED. No claim that the Modeler shows the restored state.
+  description: On the implemented pixels-only adapter this returns error=active_document_binding_unverified BEFORE any history read, disk replacement, reload dispatch or output work, because the scoped-target observation exposes no verified full canonical active-document path bound to the exact PID/HWND. A same-name document elsewhere cannot be excluded; no caller flag, title basename, transport fixture, timestamp, hash or seeded snapshot is accepted as a substitute. Not full real-time co-design acceptance; the guarded restore/reload runs only on a route that provides such a typed observation. No claim that the Modeler shows a restored state.
   source_file: scripts/live_undo.py
   execution: sync
   affinity: any

@@ -143,13 +143,16 @@ then fails with `error=unauthorized_action`.
    truncated PNG is fatal, closes admission, and leaves no SPM, history or
    screenshot directory change behind.
 
-**How the write entries work.** `live_save`, `live_revert`, `live_apply` and
-`live_undo` validate an explicit `process_id` against the bound window first,
-take a fresh native observation, deliver the operator-declared menu action as
-authorized physical input and then observe again. The input is **bounded physical
-foreground input** in the exact bound window; nothing here edits in the
-background, and there is no raw PowerShell / UI Automation / PostMessage /
-PrintWindow route. Before the first real observation or input, report the actual
+**How the write entries work.** `live_save` and `live_revert` validate an
+explicit `process_id` against the bound window first, take a fresh native
+observation, deliver the operator-declared menu action as authorized physical
+input and then observe again. `live_apply` and `live_undo` validate the PID first
+too, but both are **fail-closed** on the implemented pixels-only route: `apply`
+delivers only the SAVE and then refuses its dependent edit, and `undo` refuses
+at the active-document binding gate before dispatching ANY input. The input is
+**bounded physical foreground input** in the exact bound window; nothing here
+edits in the background, and there is no raw PowerShell / UI Automation /
+PostMessage / PrintWindow route. Before the first real observation or input, report the actual
 route attestation for that task: `provider=dcc-cua`, the runtime version, the
 exact PID and the exact native HWND. The connection, task and observation
 references belong to the individual owned task and are kept with it; they are not
@@ -197,11 +200,29 @@ Delivery and effect are reported separately, because they are different facts:
   applied a menu command. Results therefore carry
   `verification.status: "unknown"` with `established_by: null`. Taking another
   screenshot is observation, not effect verification.
-- **Backups are not spent on an unverified reload.** `live_undo` restores the
-  file on disk and delivers the reload, but keeps the only history snapshot and
-  reports `undo_depth` accordingly, because deleting it would discard the
-  user's undo for a reload that may never have happened. Nothing sets
-  `effect="verified"` and no self-reported flag is added.
+- **`live_undo` is fail-closed on the active-document binding.** The route can
+  only report a best-effort document *name* from the bound window title; the
+  scoped-target status declares `active_document_path: False` and
+  `active_document_verified: False` and exposes no full canonical path bound to
+  the exact PID/HWND. A caller path therefore cannot be positively matched to
+  the open document, and a same-name document in another directory cannot be
+  excluded. `live_undo` returns
+  `error=active_document_binding_unverified` with `disk_mutation: false`,
+  `history_mutation: false` and `reload_dispatch: false`, **before** any history
+  read, disk replacement, reload dispatch or output work. No caller boolean,
+  title basename, transport/test attribute, historical snapshot, file mtime or
+  content hash is accepted as a substitute. This is a reported adapter
+  capability gap (`active_document_path_verifier: NOT_AVAILABLE`), not full
+  real-time co-design acceptance and not a claim that the public protocol or
+  another host lacks document semantics. The required interface is a typed,
+  process/document-bound observation of the FULL canonical active-document path
+  from the exact scoped target, with verifiable provenance.
+- The guarded transaction code is retained for a route that does provide that
+  observation. The earlier guarantees are unchanged for it: backups are not
+  spent on an unverified reload (`undo_depth`), recovery is reported with
+  `file_restored` / `history_retained` / `gui_state`, and nothing sets
+  `effect="verified"` or adds a self-reported flag. On the implemented
+  pixels-only route that code is unreachable, so no snapshot is consumed.
 - The active document is parsed from the bound window title and is always
   returned with `active_document_verified: False`; an unparseable title is
   refused with `error=active_document_unverifiable`.
@@ -227,13 +248,12 @@ atomic rename per commit, a private staging directory per call, a structured
 receipt with `file_restored` / `history_retained` / `gui_state` when a reload is
 not delivered (including disk compensation and keeping the sole backup when
 compensation itself fails), and a screenshot failure reported as
-`screenshot_error` without rolling the commit back. For `apply` those guarantees
-apply to the phase that now runs only once a source-bound save confirmation
-exists; on the implemented pixels-only route the entry stops before that phase,
-so no disk compensation or history write is exercised there. `undo` reaches its
-own restore and reload from a snapshot that already exists — recovery material or
-a route that could run `apply` — and never consumes that snapshot on an
-unverified reload.
+`screenshot_error` without rolling the commit back. On the implemented
+pixels-only route BOTH entries stop before that phase: `apply` at the save
+prerequisite, `undo` at the active-document binding gate. No disk compensation,
+history write, restore, reload or screenshot is exercised there. The retained
+transaction engine runs only on a route that provides both a source-bound save
+confirmation and a source-bound full active-document path observation.
 
 ## 4. Precise remaining Core extension point
 

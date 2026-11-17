@@ -192,104 +192,88 @@ def test_a_failed_connection_cleanup_is_retained(gui):
     assert errors[0].native_evidence["cleanup_status"] == "cleanup_failed"
 
 
-def test_undo_reload_proved_before_execute_reports_truthfully(gui, tmp_path):
-    """Control: the runtime's own action-stage evidence, not a false flag.
+def _assert_binding_gate_holds(gui, tree, tmp_path, payload):
+    """The gate refuses BEFORE any of the transaction states can be reached."""
+    assert payload["error"] == "active_document_binding_unverified"
+    assert payload["phase"] == "active_document_binding"
+    assert payload["disk_mutation"] is False
+    assert payload["history_mutation"] is False
+    assert payload["reload_dispatch"] is False
+    assert payload["gui_state"] == "unknown"
+    assert payload["document_binding"]["established"] is False
+    assert payload["adapter_capability"]["active_document_path_verifier"] == "NOT_AVAILABLE"
+    assert payload["observed_capabilities"]["active_document_path"] is False
+    assert payload["observed_capabilities"]["active_document_verified"] is False
+    assert length(tree) == "2", "the file is never restored or mutated"
+    assert gui.transport.action_keys() == [], "no reload may be dispatched"
+    assert not (tmp_path / "shots").exists(), "no output work may start"
+    json.dumps(payload)  # the refusal is a bounded, serialisable receipt
 
-    The proof is pre-dispatch phase, no action attempted, no input sent, with
-    completion known and the effect not unknown. Undo is the reachable write
-    path: production apply refuses its dependent phase before any edit.
-    """
+
+def test_pre_dispatch_refusal_cannot_bypass_the_binding_gate(gui, tmp_path):
+    """Runtime no-dispatch evidence is irrelevant: undo never reaches a reload."""
     tree = write_tree(tmp_path / "tree.spm")
-    snap = harness.seed_snapshot(tree, "5")  # controlled fixture, not an apply
+    snap = harness.seed_snapshot(tree, "5")
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "pre_dispatch_refusal"}
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "the restored file stays restored"
-    assert snap.is_file(), "the history is retained for the documented retry"
-    assert payload["phase"] == "reload"
-    assert payload["dispatch"] == "not_dispatched"
-    assert payload["native_error"]["native_evidence"]["details"]["phase"] == "pre_dispatch"
-    assert payload["native_error"]["native_evidence"]["details"]["input_sent"] == "not_sent"
-    assert payload["native_error"]["native_evidence"]["details"]["completion"] == "known"
-    assert payload["file_restored"] is True
-    assert payload["history_retained"] is True
-    assert payload["gui_state"] == "unknown"
-    assert payload["error"] == "menu_action_rejected"
-    assert payload["retry"]
-    json.dumps(payload)
+    _assert_binding_gate_holds(gui, tree, tmp_path, payload)
+    assert snap.is_file(), "the only backup is untouched"
 
 
-def test_undo_unclassified_dispatch_error_preserves_the_restore_and_backup(gui, tmp_path):
-    """A dispatch error the runtime cannot classify is not a known failure."""
+def test_unclassified_dispatch_error_cannot_bypass_the_binding_gate(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
     snap = harness.seed_snapshot(tree, "5")
     gui.transport.fail_action_matching = {"keys": "ctrl+r"}
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "the restore stays on disk"
-    assert snap.is_file(), "the only backup must survive"
-    assert payload["dispatch"] == "unknown_dispatch"
-    assert payload["file_restored"] is True, "the local restore already happened"
-    assert payload["history_retained"] is True
-    assert payload["gui_state"] == "unknown"
-    assert payload["native_error"]["type"] == "OwnedCuaMcpError"
-    assert "compensation_error" not in payload, "no blind compensation may be attempted"
-    json.dumps(payload)
+    _assert_binding_gate_holds(gui, tree, tmp_path, payload)
+    assert snap.is_file()
 
 
-def test_undo_partial_insertion_preserves_the_restore_and_backup(gui, tmp_path):
-    """A partial insertion reports false flags while input already reached it."""
+def test_partial_insertion_cannot_bypass_the_binding_gate(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
     snap = harness.seed_snapshot(tree, "5")
     gui.transport.action_outcomes = {REVERT_ROUTE["keys"]: "partial"}
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "input was inserted, so nothing is rolled back"
+    _assert_binding_gate_holds(gui, tree, tmp_path, payload)
     assert snap.is_file()
-    assert payload["dispatch"] == "partial"
-    assert payload["file_restored"] is True
-    assert payload["history_retained"] is True
 
 
-def test_undo_restore_failure_keeps_the_only_backup(gui, tmp_path, monkeypatch):
-    """Limited unit check of the transaction logic, not real-time acceptance."""
+def test_a_monkeypatched_replace_cannot_bypass_the_binding_gate(gui, tmp_path, monkeypatch):
+    """The retained transaction engine is unreachable: _replace is never called."""
     tree = write_tree(tmp_path / "tree.spm")
     snap = harness.seed_snapshot(tree, "5")
+    called = []
     monkeypatch.setattr(
-        live, "_replace", lambda src, source: (_ for _ in ()).throw(OSError("disk full"))
+        live,
+        "_replace",
+        lambda src, source: called.append("reached") or (_ for _ in ()).throw(OSError("disk full")),
     )
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
-    assert snap.is_file(), "the only backup must survive"
-    assert payload["phase"] == "replace"
-    assert payload["file_restored"] is False
-    assert payload["history_retained"] is True
-    assert payload["history_snapshot"] == str(snap)
-    assert payload["retry"]
+    _assert_binding_gate_holds(gui, tree, tmp_path, payload)
+    assert called == [], "the binding gate precedes the transaction engine"
+    assert snap.is_file()
 
 
-def test_undo_keeps_the_snapshot_until_the_reload_is_confirmed(gui, tmp_path):
+def test_no_retry_can_unlock_undo_without_a_bound_document(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
-    harness.seed_snapshot(tree, "5")  # controlled fixture
+    snap = harness.seed_snapshot(tree, "5")  # controlled fixture
     gui.transport.fail_action_matching = {"keys": "ctrl+r"}
     payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5"
-    assert len(list(live._snapshots(tree))) == 1, "the retryable snapshot must survive"
-    assert payload["history_retained"] is True
+    _assert_binding_gate_holds(gui, tree, tmp_path, payload)
     gui.transport.fail_action_matching = None
-    retried = live.undo(tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "the retry still restores the file"
-    # A delivered-but-unverifiable reload must never consume the only backup.
-    assert retried["undo_depth"] == 1
-    assert retried["verification"]["history_retained"] is True
+    again = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    _assert_binding_gate_holds(gui, tree, tmp_path, again)
+    assert len(list(live._snapshots(tree))) == 1, "the snapshot is never consumed"
+    assert snap.is_file()
 
 
-def test_screenshot_failure_after_a_committed_reload_does_not_roll_back(gui, tmp_path):
+def test_screenshot_failure_cannot_bypass_the_binding_gate(gui, tmp_path):
     tree = write_tree(tmp_path / "tree.spm")
     harness.seed_snapshot(tree, "5")  # controlled fixture
-    gui.transport.fail_snapshot_from = 2  # the post-reload observation
-    result = live.undo(tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "a completed restore must not be rolled back"
-    assert result["undo_depth"] == 1
-    assert result["screenshot"] is None
-    assert "capture_proof_rejected" in result["screenshot_error"]
-    assert result["reload_effect"] == "unverifiable"
+    gui.transport.fail_snapshot_from = 2  # would be the post-reload observation
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    _assert_binding_gate_holds(gui, tree, tmp_path, payload)
+    assert gui.transport.observation == 0, "no capture is even attempted"
 
 
 @pytest.fixture

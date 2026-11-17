@@ -62,30 +62,34 @@ def test_apply_creates_no_history_and_sends_no_reload(gui, tmp_path):
     assert gui.transport.action_keys() == ["ctrl+s"], "no reload is delivered"
 
 
-def test_undo_keeps_the_only_snapshot_when_the_reload_is_unverified(gui, tmp_path):
-    """Controlled fixture: the snapshot is seeded, not produced by apply."""
+def test_undo_refuses_before_the_history_and_reload_boundaries(gui, tmp_path):
+    """A seeded snapshot cannot manufacture a bound-document observation.
+
+    Undo is fail-closed on pixels_only, so the only backup survives untouched
+    and no reload can be delivered -- a stronger guarantee than merely keeping
+    the snapshot through an unverified reload.
+    """
     tree = write_tree(tmp_path / "tree.spm")
     snapshots = [harness.seed_snapshot(tree, "5")]
     assert len(snapshots) == 1
-    result = live.undo(tree, settle_seconds=0, session=gui.session)
-    assert snapshots[0].is_file(), "the only backup must survive an unverified reload"
-    assert length(tree) == "5", "the disk restore itself is real"
-    assert result["verification"]["history_retained"] is True
-    assert result["undo_depth"] == 1, "retained history is still undoable"
-    assert result["verification"]["status"] in {"unknown", "pending"}
-    assert result["reload"]["delivered"] is True
-    assert result["reload"]["effect"] == "unverifiable"
-    assert result["reload"]["verification_required"] is True
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert payload["error"] == "active_document_binding_unverified"
+    assert payload["disk_mutation"] is False
+    assert payload["history_mutation"] is False
+    assert payload["reload_dispatch"] is False
+    assert snapshots[0].is_file(), "the only backup is untouched"
+    assert length(tree) == "2", "the file is not restored"
+    assert gui.transport.action_keys() == [], "no reload may be dispatched"
 
 
-def test_a_delivered_but_unverified_reload_is_not_compensated(gui, tmp_path):
-    """Undo keeps the restored file; an uncertain reload rolls nothing back."""
+def test_a_delivered_but_unverified_reload_cannot_be_reached_by_undo(gui, tmp_path):
+    """No reload is delivered at all, so there is nothing to compensate."""
     tree = write_tree(tmp_path / "tree.spm")
     harness.seed_snapshot(tree, "5")
-    result = live.undo(tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "the restore stays; no silent rollback"
-    assert result["verification"]["status"] in {"unknown", "pending"}
-    assert gui.transport.action_keys() == ["ctrl+r"]
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert payload["error"] == "active_document_binding_unverified"
+    assert length(tree) == "2", "the file stays; no silent rollback"
+    assert gui.transport.action_keys() == []
 
 
 def test_apply_refuses_a_process_id_that_is_not_the_bound_window(gui, tmp_path):

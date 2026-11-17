@@ -85,25 +85,32 @@ def test_apply_refuses_the_dependent_write_without_a_source_bound_save(gui, tmp_
     assert gui.transport.action_keys() == ["ctrl+s"], "the reload is never attempted"
 
 
-def test_undo_restores_the_previous_state_and_keeps_the_backup(gui, tmp_path):
-    """The disk restore is real; the backup survives an unverified reload.
+def test_undo_refuses_without_bound_document_and_preserves_file_and_backup(gui, tmp_path):
+    """Undo is fail-closed: no full-path binding is available on pixels_only.
 
     The history snapshot is a CONTROLLED FIXTURE: production ``apply`` refuses
-    its dependent write, so no real apply produced this snapshot. This checks
-    undo's own pure-file behaviour, not that the live edit feature works.
+    its dependent write, so no real apply produced it. A seeded snapshot, a
+    matching window-title basename and a transport ``document_path`` are all
+    inadmissible as proof of the document bound to the scoped target, so undo
+    must refuse before any disk/history mutation, reload or output work.
     """
     tree = write_tree(tmp_path / "tree.spm")
     snap = harness.seed_snapshot(tree, "5")
+    gui.transport.document_path = tree  # a self-asserted path is NOT proof
     assert live._snapshots(tree) == [snap]
-    result = live.undo(tree, settle_seconds=0, session=gui.session)
-    assert length(tree) == "5", "the restore returns the pre-edit state"
-    assert result["undo_depth"] == 1, "the backup is retained while the reload is unverified"
-    assert result["verification"]["status"] == "unknown"
-    assert Path(result["verification"]["history_snapshot"]).is_file()
-    # A retained snapshot means a repeat undo can never report "no history".
-    again = live.undo(tree, settle_seconds=0, session=gui.session)
-    assert again["undo_depth"] == 1
-    assert length(tree) == "5"
+    payload = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert payload["error"] == "active_document_binding_unverified"
+    assert payload["disk_mutation"] is False
+    assert payload["history_mutation"] is False
+    assert payload["reload_dispatch"] is False
+    assert length(tree) == "2", "the file is not restored or otherwise mutated"
+    assert live._snapshots(tree) == [snap], "the only backup is untouched"
+    assert gui.transport.action_keys() == [], "no reload may be dispatched"
+    assert not (tmp_path / "shots").exists(), "no output work may start"
+    # The refusal is unconditional: a repeat undo cannot reach the transaction.
+    again = payload_of(live.undo, tree, settle_seconds=0, session=gui.session)
+    assert again["error"] == "active_document_binding_unverified"
+    assert length(tree) == "2"
 
 
 def test_save_and_revert_report_the_unverifiable_effect(gui):

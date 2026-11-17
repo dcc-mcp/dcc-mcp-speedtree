@@ -116,8 +116,8 @@ watching so an agent can observe it, capture it and deliver the configured save
 and revert commands. `live_status` reports the bound window and the active
 document, `live_screenshot` takes a fresh native capture of the exact bound
 window, and `live_save` / `live_revert` deliver their configured physical
-command to that window. `live_undo` restores the file **on disk** from the newest
-history snapshot and delivers the reload command.
+command to that window. `live_undo` is **fail-closed** on this route and does not
+restore any file: see below.
 
 All observation and input go through the project's dcc-cua / DCC-MCP
 `ui-control` route: one owned, integrity-pinned runtime task bound to an exact
@@ -140,8 +140,21 @@ acceptance; the edit/reload path runs only on a route that provides such a
 confirmation. `live_open` is likewise unsupported on this route: the supported
 pixels-only configuration exposes no element targeting, so a File > Recents
 entry cannot be located or activated. Open the document with dcc-cua / DCC-MCP
-`ui-control` first. Both of these are adapter capability gaps, not statements
-that the public protocol or another host lacks the ability.
+`ui-control` first.
+
+**`live_undo` is also fail-closed on the implemented pixels-only adapter.** It
+returns `error=active_document_binding_unverified` **before** any history read,
+disk replacement, reload dispatch or output work, because the route can only
+report a best-effort document *name* from the window title and exposes no
+verified full canonical path of the document bound to the exact scoped target.
+A same-name document in another directory cannot be ruled out; no caller flag,
+title basename, transport fixture, file timestamp, content hash or seeded history
+snapshot is accepted as a substitute. It is reported as an adapter capability gap
+(`active_document_path_verifier: NOT_AVAILABLE`), not full real-time co-design
+acceptance; the guarded restore/reload transaction runs only on a route that
+provides a process/document-bound typed observation of the full path. All three
+of these are adapter capability gaps, not statements that the public protocol or
+another host lacks the ability.
 
 What is deliberately not claimed:
 
@@ -153,8 +166,8 @@ What is deliberately not claimed:
   the only backup.
 - A delivered command still reports `verification.status: "unknown"`, because the
   runtime reports the action's `effect` as `unverifiable` and no same-task
-  observation proves the Modeler applied it. `live_undo` therefore keeps the only
-  backup instead of consuming it.
+  observation proves the Modeler applied it. `live_undo` is refused before any
+  backup is read, consumed or written, so the only backup is untouched.
 - The active document is read from the bound window title and is reported as
   unverified, and a modal dialog cannot be observed in `pixels_only` mode.
 - Without the trusted server-owned session every entry fails closed with
