@@ -117,6 +117,12 @@ window metadata and an unverified document name; `live_screenshot` captures a
 fresh native PNG. `live_revert` can deliver its configured physical foreground
 command, with its application effect reported as unverified.
 
+Capture refusals keep the existing error and message and, when supplied by Core,
+include its bounded `native_evidence` diagnostics. These can identify the capture
+stage, refusal reason and blocker PID/window/bounds without exposing other
+application text, image data or authorization fields. Missing diagnostics remain
+absent; a refusal never becomes a successful screenshot.
+
 **`live_save`, `live_apply` and `live_undo` are unsupported on the implemented
 pixels-only adapter.** They return `error=active_document_binding_unverified`
 before Save input, file/history mutation, reload or output creation. A title
