@@ -194,7 +194,7 @@ def test_project_dependency_alias_is_rejected_by_file_identity(production_input,
     source, operations, brief = production_input
     original = source.read_bytes()
     alias = source.with_name("project-link.spm")
-    alias.hardlink_to(source)
+    os.link(source, alias)
     assert alias.samefile(source)
     brief["dependencies"] = [alias.name]
     output = tmp_path / "project-alias-output"
