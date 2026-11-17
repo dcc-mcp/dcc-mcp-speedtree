@@ -60,6 +60,9 @@ def _relative(value):
     win = PureWindowsPath(value)
     if win.is_absolute() or win.drive or any(part in ("..", ".") for part in win.parts):
         raise ValueError(f"Dependency path must stay inside the reference directory: {value}")
+    # Win32 can resolve these spellings to a different, already staged name.
+    if any(part.endswith((".", " ")) for part in win.parts):
+        raise ValueError(f"Dependency path contains a trailing period or space: {value}")
     return Path(*win.parts)
 
 
