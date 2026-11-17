@@ -160,7 +160,13 @@ def test_identical_dependency_references_are_deduplicated(production_input, tmp_
 
 @pytest.mark.parametrize(
     "dependency",
-    ["reference.spm.", "reference.spm ", "textures./leaf.png", "textures /leaf.png"],
+    [
+        "reference.spm.",
+        "reference.spm ",
+        "textures./leaf.png",
+        "textures /leaf.png",
+        "reference.spm::$DATA",
+    ],
 )
 def test_dependency_windows_aliases_are_rejected_before_publication(
     production_input, tmp_path, dependency
@@ -176,12 +182,28 @@ def test_dependency_windows_aliases_are_rejected_before_publication(
     brief["dependencies"] = [dependency]
     output = tmp_path / "alias-output"
 
-    with pytest.raises(ValueError, match="trailing"):
+    with pytest.raises(ValueError, match="trailing|stream"):
         generate_project(source, output, operations, brief)
 
     assert not output.exists()
     assert source.read_bytes() == original
     assert (source.parent / "textures/leaf.png").read_bytes() == b"synthetic texture dependency"
+
+
+def test_project_dependency_alias_is_rejected_by_file_identity(production_input, tmp_path):
+    source, operations, brief = production_input
+    original = source.read_bytes()
+    alias = source.with_name("project-link.spm")
+    alias.hardlink_to(source)
+    assert alias.samefile(source)
+    brief["dependencies"] = [alias.name]
+    output = tmp_path / "project-alias-output"
+
+    with pytest.raises(ValueError):
+        generate_project(source, output, operations, brief)
+
+    assert source.read_bytes() == original
+    assert not output.exists()
 
 
 def test_missing_texfilename_fails_without_partial_output(production_input, tmp_path):
