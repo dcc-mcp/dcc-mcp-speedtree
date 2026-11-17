@@ -1,6 +1,6 @@
 ---
 name: speedtree-live
-description: Bound live session with the SpeedTree Modeler window the user is watching - observe it and deliver configured save/revert commands through the owned dcc-cua / DCC-MCP ui-control route, with every application effect reported as unverified and no background, keyboard-free or headless editing promise.
+description: Bound live session with the SpeedTree Modeler window the user is watching - observe it and deliver a configured revert command through the owned dcc-cua / DCC-MCP ui-control route, with every application effect reported as unverified and no background, keyboard-free or headless editing promise.
 license: MIT
 metadata:
   dcc-mcp:
@@ -40,33 +40,21 @@ Without the trusted server-owned session every entry fails closed with
    a modal dialog cannot be observed.
 2. `live_screenshot` takes a fresh native capture of the exact bound window and
    returns the PNG path. It is not a background capture.
-3. `live_save` and `live_revert` deliver the configured physical command to the
-   bound window. They report the **delivery** and report the application
-   **effect as UNVERIFIED/UNKNOWN**. A command the runtime did not confirm as
-   delivered (`success` / `delivery_completed` / `post_dispatch_validated` not
-   all true) is refused. Neither entry claims that the document was saved or that
-   the Modeler reloaded it, and a fresh PNG is not proof of either.
-4. `live_undo` — **not available as a disk restore on the implemented
-   pixels-only adapter.** It returns `error=active_document_binding_unverified`
-   **before** any history read, disk replacement, reload dispatch or output work,
-   because the scoped-target observation only reports a best-effort document name
-   from the window title and exposes no verified full canonical path bound to the
-   exact PID/HWND. A same-name document elsewhere cannot be ruled out, and no
-   caller flag, title basename, transport fixture, file timestamp, content hash
-   or seeded history snapshot is accepted as a substitute. Do not present this
-   entry as working, do not retry it automatically, and do not substitute a file
-   check for the missing observation. This is a reported adapter capability gap,
-   not full real-time co-design acceptance and not a claim that the public
-   protocol or another host lacks document semantics.
-5. `live_apply` — **not available as an edit on the implemented pixels-only
-   adapter.** It returns `error=save_prerequisite_unverified`
-   **before** any dependent business-file edit, history snapshot or reload,
-   because that route offers no formal process/document-bound save confirmation:
-   a changed mtime or a changed content hash only shows that the disk changed,
-   not that the bound Modeler saved its current GUI edits into that document.
-   Do not present this entry as working, do not retry it automatically, and do
-   not substitute a file check for the missing confirmation. This is a reported
-   adapter capability gap, not full real-time co-design acceptance.
+3. `live_revert` can deliver its declared physical foreground command. Delivery
+   and application effect are separate; the effect remains UNVERIFIED/UNKNOWN.
+   Partial or unknown completion is not proof that no input occurred. A PNG
+   does not prove that the Modeler reloaded the document.
+4. `live_save`, `live_apply` and `live_undo` are **unsupported on the implemented
+   pixels-only adapter**. They return `error=active_document_binding_unverified`
+   before Save input, file/history changes, reload or output work. The bound
+   window title supplies a name, not reliable full-document identity or save
+   completion. A same-name file elsewhere cannot be excluded. Caller flags,
+   custom dictionaries, timestamps, hashes and old snapshots cannot supply the
+   missing proof. Do not retry automatically or present these refusals as
+   completed live co-design. Full operation needs a real provider integration
+   and native verification; public Core semantic APIs already exist.
+5. The retained transaction/recovery helpers are not reached by these entries
+   on this route. Their controlled tests do not establish native acceptance.
 6. `live_open` is **unsupported on the implemented pixels-only route**
    (`error=open_recent_unsupported_on_pixels_only_route`): it exposes no element
    targeting, so a File > Recents entry cannot be located or activated. That is
@@ -86,7 +74,7 @@ is actually used, and a missing route is refused then
 ## Rules
 
 - The target path must be the document active in the Modeler, and that is read
-  from the window title and reported as unverified.
+  from the window title and reported as unverified; it never authorizes a write.
 - Keep the file next to its textures (SPM texture paths are relative).
 - The window must not be minimised for capture.
 - Never report a delivered command as an applied effect. Report disk state, the

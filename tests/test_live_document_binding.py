@@ -9,12 +9,21 @@ must not deliver Ctrl+R to the bound window.
 
 from __future__ import annotations
 
-from pathlib import Path
+import subprocess
 
 import live_ui_harness as harness
 import pytest
 
 from dcc_mcp_speedtree import live
+
+
+@pytest.fixture(autouse=True)
+def forbid_native_processes(monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Document-binding regressions must launch no child process")
+
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
 
 
 def test_real_status_declares_no_full_path_and_no_verification(monkeypatch, tmp_path):
@@ -32,69 +41,6 @@ def test_real_status_declares_no_full_path_and_no_verification(monkeypatch, tmp_
         )
     finally:
         gui.session.close()
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"capabilities": {"active_document_verified": True}},  # flag only, no path
-        {"bound_document_path": "C:/forged/tree.spm"},  # caller/mock asserted path
-        {"capabilities": {"active_document_path": True, "active_document_verified": False}},
-        {"scope": "whole_desktop"},  # wrong scope
-        {"bound_document_path": 12345},  # non-string
-    ],
-)
-def test_bound_document_observation_rejects_forged_or_partial_states(tmp_path, overrides):
-    """No caller boolean, forged path or partial state can manufacture proof."""
-    tree = harness.write_tree(tmp_path / "tree.spm", "2")
-    base = {
-        "scope": "exact_bound_window_only",
-        "target": {"process_id": harness.PID, "window_handle": harness.HWND},
-        "capabilities": {"active_document_path": False, "active_document_verified": False},
-    }
-    base.update(overrides)
-    assert live._bound_document_observation(base, tree.resolve()) is None
-
-
-def test_bound_document_observation_rejects_a_different_full_path(tmp_path):
-    """Even a typed full-path observation must resolve to the REQUESTED file."""
-    a = tmp_path / "A"
-    a.mkdir()
-    requested = harness.write_tree(a / "tree.spm", "2")
-    b = tmp_path / "B"
-    b.mkdir()
-    other = harness.write_tree(b / "tree.spm", "9")
-    state = {
-        "scope": "exact_bound_window_only",
-        "target": {"process_id": harness.PID, "window_handle": harness.HWND},
-        "capabilities": {"active_document_path": True, "active_document_verified": True},
-        "bound_document_path": str(other.resolve()),
-    }
-    assert live._bound_document_observation(state, requested.resolve()) is None
-
-
-def test_exact_formal_interface_required_for_a_bound_document(tmp_path):
-    """Documents the ONE admissible extension point, NOT a route capability.
-
-    Only a typed observation FROM the exact scoped target that declares BOTH
-    capabilities true, is scoped to the bound window, and carries a full path
-    resolving to the requested file can unlock the guarded transaction. The
-    pixels-only route never emits such a state (see the status-invariant test),
-    so this is a contract specification, not evidence that the live route works.
-    """
-    tree = harness.write_tree(tmp_path / "tree.spm", "2")
-    state = {
-        "scope": "exact_bound_window_only",
-        "target": {"process_id": harness.PID, "window_handle": harness.HWND},
-        "capabilities": {"active_document_path": True, "active_document_verified": True},
-        "bound_document_path": str(tree.resolve()),
-    }
-    observation = live._bound_document_observation(state, tree.resolve())
-    assert observation is not None
-    assert observation["resolved_path"] == str(Path(tree).resolve())
-    assert observation["authority"] == "scoped_target_observation"
-    assert observation["scope"] == "exact_bound_window_only"
-    assert observation["established"] is True
 
 
 def test_undo_refuses_wrong_document_with_same_basename(tmp_path, monkeypatch):
@@ -157,5 +103,77 @@ def test_undo_refuses_even_matching_basename_without_capability(tmp_path, monkey
         assert harness.length(requested) == "2"
         assert snapshot.exists()
         assert gui.transport.action_keys() == []
+    finally:
+        gui.session.close()
+
+
+@pytest.mark.parametrize("different_directory", [True, False])
+def test_apply_requires_document_binding_before_save(tmp_path, monkeypatch, different_directory):
+    (tmp_path / "A").mkdir()
+    (tmp_path / "B").mkdir()
+    requested = harness.write_tree(tmp_path / "A/tree.spm", "2")
+    active = harness.write_tree(tmp_path / "B/tree.spm", "9") if different_directory else requested
+    monkeypatch.setattr(live, "SHOT_DIR", tmp_path / "shots")
+    gui = harness.Harness(monkeypatch, title=harness.TITLE)
+    gui.arm_document(active, pending="13", effect="content")
+    before = (requested.read_bytes(), active.read_bytes())
+    try:
+        with pytest.raises(live.LiveError) as caught:
+            live.apply(
+                requested,
+                [
+                    {
+                        "op": "set_property",
+                        "node_id": "root",
+                        "name": "Spine:Length:Absolute",
+                        "value": 7.5,
+                    }
+                ],
+                process_id=harness.PID,
+                settle_seconds=0,
+                session=gui.session,
+            )
+        assert gui.transport.action_keys() == []
+        assert (requested.read_bytes(), active.read_bytes()) == before
+        assert caught.value.payload["error"] == "active_document_binding_unverified"
+        assert not live._history(requested).exists()
+        assert not (tmp_path / "shots").exists()
+    finally:
+        gui.session.close()
+
+
+def test_save_refuses_before_input_without_document_identity(tmp_path, monkeypatch):
+    active = harness.write_tree(tmp_path / "tree.spm", "9")
+    gui = harness.Harness(monkeypatch, title=harness.TITLE)
+    gui.arm_document(active, pending="13", effect="content")
+    before = active.read_bytes()
+    try:
+        with pytest.raises(live.LiveError) as caught:
+            live.save(process_id=harness.PID, session=gui.session)
+        assert gui.transport.action_keys() == []
+        assert active.read_bytes() == before
+        assert caught.value.payload["save_dispatch"] is False
+        assert caught.value.payload["requested_path"] is None
+    finally:
+        gui.session.close()
+
+
+def test_custom_status_dictionary_cannot_unlock_save(tmp_path, monkeypatch):
+    active = harness.write_tree(tmp_path / "tree.spm", "9")
+    gui = harness.Harness(monkeypatch, title=harness.TITLE)
+    gui.arm_document(active, pending="13", effect="content")
+    forged = {
+        "scope": "exact_bound_window_only",
+        "target": {"process_id": harness.PID, "window_handle": harness.HWND},
+        "capabilities": {"active_document_path": True, "active_document_verified": True},
+        "bound_document_path": str(active.resolve()),
+    }
+    monkeypatch.setattr(gui.session, "status", lambda: forged)
+    try:
+        with pytest.raises(live.LiveError) as caught:
+            live.save(process_id=harness.PID, session=gui.session)
+        assert caught.value.payload["error"] == "active_document_binding_unverified"
+        assert gui.transport.action_keys() == []
+        assert harness.length(active) == "9"
     finally:
         gui.session.close()

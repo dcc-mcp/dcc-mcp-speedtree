@@ -143,117 +143,47 @@ then fails with `error=unauthorized_action`.
    truncated PNG is fatal, closes admission, and leaves no SPM, history or
    screenshot directory change behind.
 
-**How the write entries work.** `live_save` and `live_revert` validate an
-explicit `process_id` against the bound window first, take a fresh native
-observation, deliver the operator-declared menu action as authorized physical
-input and then observe again. `live_apply` and `live_undo` validate the PID first
-too, but both are **fail-closed** on the implemented pixels-only route: `apply`
-delivers only the SAVE and then refuses its dependent edit, and `undo` refuses
-at the active-document binding gate before dispatching ANY input. The input is
-**bounded physical foreground input** in the exact bound window; nothing here
-edits in the background, and there is no raw PowerShell / UI Automation /
-PostMessage / PrintWindow route. Before the first real observation or input, report the actual
-route attestation for that task: `provider=dcc-cua`, the runtime version, the
-exact PID and the exact native HWND. The connection, task and observation
-references belong to the individual owned task and are kept with it; they are not
-a single gate for a whole round and not a recipe for a new permission grant.
-Delivery and effect are reported separately, because they are different facts:
+**Current document-dependent entries.** `live_save`, `live_apply` and
+`live_undo` validate the explicit PID first and return
+`error=active_document_binding_unverified` before Save input, file/history
+mutation, reload or output work. The concrete pixels-only session supplies an
+unverified title name, not a typed full canonical document identity or a
+source-bound save postcondition. Its fresh status is diagnostic only. A custom
+dictionary, `bound_document_path` string, capability boolean, mtime, content
+hash or seeded snapshot cannot define an official proof contract or unlock the
+guard. No caller confirmation argument or synthetic positive path is provided.
 
-- **Delivery** is a data check, not an exception check. Core's client returns a
-  boolean `structuredContent` result and raises nothing for a refused action, so
-  `success` / `delivery_completed` / `post_dispatch_validated` are each required
-  to be exactly `True`. Anything else raises `error=save_not_confirmed`,
-  `revert_not_confirmed` or `reload_not_confirmed`, and `live_apply` checks the
-  save **before** creating history, staging an edit or touching the document. A
-  transport-level rejection still surfaces as `error=menu_action_rejected`.
-- **A false completion flag is not proof that nothing was dispatched.** The
-  runtime's physical input fence accumulates `requested_events` / `inserted_events`
-  and keeps `delivery_completed` false until every dispatch, cleanup and
-  post-check passes, so a partial insertion reports false while real input
-  already reached the window. Every delivery therefore carries a `dispatch`
-  classification — `delivered`, `delivered_unverified`, `partial`,
-  `unknown_dispatch` or `not_dispatched` — and only `not_dispatched` is treated
-  as proved, which requires either an adapter-owned boundary that refused before
-  `execute` was entered or the runtime's own action-stage evidence
-  (`pre_dispatch` phase, `action_attempted` false, or `input_sent` `not_sent`,
-  with `completion` `known`, `effect_unknown` false and no contradictory
-  mutation or event count). Compensation and backup deletion are gated on that
-  proof; every uncertain state preserves the file and the only backup.
-- **`live_apply` refuses its dependent phase on this route.** The entry requires
-  a source-bound save confirmation — a project-route acknowledgement with
-  explicit application semantics, correct process/document binding and
-  verifiable provenance proving that the bound Modeler saved its current GUI
-  edits into **this** document. The implemented pixels-only client reports the
-  save effect as `unverifiable` and exposes no such confirmation, so `live_apply`
-  returns `error=save_prerequisite_unverified` with `disk_mutation: false` and
-  `history_mutation: false`, **before** the business-file edit, the history
-  snapshot and the reload — even when the file's mtime or its content hash
-  changed. A file observation is still reported, as a diagnostic with
-  `authority: "none"`: it shows that the disk changed, not that the bound
-  Modeler saved into that document. No automatic retry, and no synthesized
-  acknowledgement. This is a reported adapter capability gap
-  (`save_effect_verifier: NOT_AVAILABLE`), not full real-time co-design
-  acceptance and not a statement that the public protocol lacks the ability.
-- **Effect** stays unverified. The runtime reports every delivered physical
-  action's `effect` as `unverifiable`, and the only same-task observations
-  available are native pixels and window state — neither proves the Modeler
-  applied a menu command. Results therefore carry
-  `verification.status: "unknown"` with `established_by: null`. Taking another
-  screenshot is observation, not effect verification.
-- **`live_undo` is fail-closed on the active-document binding.** The route can
-  only report a best-effort document *name* from the bound window title; the
-  scoped-target status declares `active_document_path: False` and
-  `active_document_verified: False` and exposes no full canonical path bound to
-  the exact PID/HWND. A caller path therefore cannot be positively matched to
-  the open document, and a same-name document in another directory cannot be
-  excluded. `live_undo` returns
-  `error=active_document_binding_unverified` with `disk_mutation: false`,
-  `history_mutation: false` and `reload_dispatch: false`, **before** any history
-  read, disk replacement, reload dispatch or output work. No caller boolean,
-  title basename, transport/test attribute, historical snapshot, file mtime or
-  content hash is accepted as a substitute. This is a reported adapter
-  capability gap (`active_document_path_verifier: NOT_AVAILABLE`), not full
-  real-time co-design acceptance and not a claim that the public protocol or
-  another host lacks document semantics. The required interface is a typed,
-  process/document-bound observation of the FULL canonical active-document path
-  from the exact scoped target, with verifiable provenance.
-- The guarded transaction code is retained for a route that does provide that
-  observation. The earlier guarantees are unchanged for it: backups are not
-  spent on an unverified reload (`undo_depth`), recovery is reported with
-  `file_restored` / `history_retained` / `gui_state`, and nothing sets
-  `effect="verified"` or adds a self-reported flag. On the implemented
-  pixels-only route that code is unreachable, so no snapshot is consumed.
-- The active document is parsed from the bound window title and is always
-  returned with `active_document_verified: False`; an unparseable title is
-  refused with `error=active_document_unverifiable`.
-- A modal dialog cannot be observed (`pixels_only` reports
-  `accessibility_available: False`), so `status()` reports
-  `capabilities.modal_dialog: False` instead of claiming the window is clear.
+This is the implemented adapter's capability gap. Public Core semantic APIs
+exist; `OwnedCuaMcpTransport.rpc` / `.tool` are legitimate transport/session
+mechanisms. Neither their existence nor a delivered native menu action proves
+that the bound Modeler saved current GUI edits into a specific full-path
+project. Full functionality requires integration and native verification of a
+real provider contract for document identity and save completion. These safe
+refusals do not complete the original live feature.
 
-`live_open` is **not** available on this route and refuses with
-`error=open_recent_unsupported_on_pixels_only_route`. The limitation is the
-supported startup configuration, not a file-dialog HWND: File > Recents is a
-menu of the same bound window, and `OwnedCuaMcpTransport.rpc` / `.tool` is a
-generic public-protocol transport, so neither is the blocker. What is missing is
-element targeting — `UiControlRuntimeOptions` accepts only `owned_mcp_pixels`
-with `pixels_only`, `PixelsMcpHostClient` is the only public host client, and it
-rejects `element_token` / `element_index`, refuses a semantic observation
-(`node_count` 0) and leaves `invoke_menu` unsupported. The needed contract is a
-public semantic-capable host client (or another `observation_mode` /
-`transport` value), element targeting in the adapter client, or a typed DCC
-document-open action.
+**Reachable physical input.** `live_revert` still uses a declared, authorized
+physical foreground command in the exact bound window. Its returned delivery
+flags must each be exactly true; its effect remains unverifiable and its
+verification status unknown. A false completion flag, partial insertion or
+transport exception does not prove that no input occurred. The existing
+classification and recovery helpers preserve this distinction. A fresh PNG is
+observation, not reload/save confirmation. Read-only status/capture do not
+require menu routes; missing routes and action permission remain checked by
+the concrete command client.
 
-`apply` / `undo` keep the on-disk guarantees from the transaction repair: one
-atomic rename per commit, a private staging directory per call, a structured
-receipt with `file_restored` / `history_retained` / `gui_state` when a reload is
-not delivered (including disk compensation and keeping the sole backup when
-compensation itself fails), and a screenshot failure reported as
-`screenshot_error` without rolling the commit back. On the implemented
-pixels-only route BOTH entries stop before that phase: `apply` at the save
-prerequisite, `undo` at the active-document binding gate. No disk compensation,
-history write, restore, reload or screenshot is exercised there. The retained
-transaction engine runs only on a route that provides both a source-bound save
-confirmation and a source-bound full active-document path observation.
+Before the first actual observation/input, report `provider=dcc-cua`, runtime
+version, exact PID and HWND. Keep each task's connection and references until
+its own stop; no whole-round shared connection is required. No grant comes
+from caller JSON/environment, and no raw UI Automation, posted keys or
+PrintWindow fallback is available.
+
+`live_open` remains unsupported by this adapter's pixels-only integration.
+This is not a global missing-Core-semantic-client claim. The retained apply/undo
+transaction engine remains below the unsupported document guard: no file swap,
+snapshot consumption, compensation, reload or screenshot is reached there.
+Existing tests of its helpers are controlled source checks, not native
+Modeler acceptance. A future real provider integration requires fresh review
+and actual host validation; caller booleans cannot enable it.
 
 ## 4. Precise remaining Core extension point
 

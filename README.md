@@ -94,72 +94,38 @@ material dependency stops the batch and preserves a partial manifest.
 
 ## Live session with the Modeler (Windows)
 
-The `speedtree-live` skill binds to the SpeedTree Modeler window the user is
-watching so an agent can observe it, capture it and deliver the configured save
-and revert commands. `live_status` reports the bound window and the active
-document, `live_screenshot` takes a fresh native capture of the exact bound
-window, and `live_save` / `live_revert` deliver their configured physical
-command to that window. `live_undo` is **fail-closed** on this route and does not
-restore any file: see below.
+The `speedtree-live` skill observes one exact Modeler window through the
+project-owned dcc-cua / DCC-MCP `ui-control` route. `live_status` reports scoped
+window metadata and an unverified document name; `live_screenshot` captures a
+fresh native PNG. `live_revert` can deliver its configured physical foreground
+command, with its application effect reported as unverified.
 
-All observation and input go through the project's dcc-cua / DCC-MCP
-`ui-control` route: one owned, integrity-pinned runtime task bound to an exact
-PID and window handle, with a bounded action ceiling and real Host
-authorization. Input is bounded physical foreground input in that exact window —
-not a background or keyboard-free edit — and there is no raw PowerShell / UI
-Automation / PostMessage / PrintWindow fallback and no grant read from tool JSON
-or a caller's environment. Before the first real observation or input, report the
-actual route attestation for that task: `provider=dcc-cua`, the runtime version,
-the exact PID and the exact native HWND.
+**`live_save`, `live_apply` and `live_undo` are unsupported on the implemented
+pixels-only adapter.** They return `error=active_document_binding_unverified`
+before Save input, file/history mutation, reload or output creation. A title
+basename cannot establish the full document path; the implemented route supplies
+no reliable document identity or source-bound save confirmation. Caller flags,
+custom dictionaries, file timestamps, hashes and historical snapshots cannot
+supply this proof. No automatic retry or synthetic confirmation is used.
 
-**`live_apply` does not perform an edit on the implemented pixels-only
-adapter.** It returns `error=save_prerequisite_unverified` **before** any
-dependent business-file edit, history snapshot or reload, because that route has
-no formal process/document-bound save confirmation: a changed mtime or a changed
-content hash only shows that the disk changed, not that the bound Modeler saved
-its current GUI edits into that document. It is reported as an adapter capability
-gap (`save_effect_verifier: NOT_AVAILABLE`) and is not full real-time co-design
-acceptance; the edit/reload path runs only on a route that provides such a
-confirmation. `live_open` is likewise unsupported on this route: the supported
-pixels-only configuration exposes no element targeting, so a File > Recents
-entry cannot be located or activated. Open the document with dcc-cua / DCC-MCP
-`ui-control` first.
+`live_open` is also unsupported on this route. Existing public Core semantic
+APIs are not a promise of a working Modeler integration: a real provider must be
+integrated and verified for full document identity, save effects and document
+opening. The current refusals are a limited safety correction, not completed
+real-time co-design or a claim that the public protocol lacks these abilities.
 
-**`live_undo` is also fail-closed on the implemented pixels-only adapter.** It
-returns `error=active_document_binding_unverified` **before** any history read,
-disk replacement, reload dispatch or output work, because the route can only
-report a best-effort document *name* from the window title and exposes no
-verified full canonical path of the document bound to the exact scoped target.
-A same-name document in another directory cannot be ruled out; no caller flag,
-title basename, transport fixture, file timestamp, content hash or seeded history
-snapshot is accepted as a substitute. It is reported as an adapter capability gap
-(`active_document_path_verifier: NOT_AVAILABLE`), not full real-time co-design
-acceptance; the guarded restore/reload transaction runs only on a route that
-provides a process/document-bound typed observation of the full path. All three
-of these are adapter capability gaps, not statements that the public protocol or
-another host lacks the ability.
+All actual UI requires a real Host-authorized, integrity-pinned task bound to
+an exact PID/HWND. Before its first observation or input, report
+`provider=dcc-cua`, the runtime version, PID and HWND. Keep each task on its own
+issuing connection. There is no raw PowerShell / UI Automation / posted-key /
+PrintWindow fallback and no authorization from tool JSON or caller environment.
 
-What is deliberately not claimed:
-
-- A menu command the runtime did not confirm as delivered
-  (`success`/`delivery_completed`/`post_dispatch_validated` not all true) is
-  refused. A false `delivery_completed` is not proof that nothing was sent — the
-  runtime keeps it false for a partial insertion — so compensation and backup
-  deletion are gated on proof, and every uncertain state preserves the file and
-  the only backup.
-- A delivered command still reports `verification.status: "unknown"`, because the
-  runtime reports the action's `effect` as `unverifiable` and no same-task
-  observation proves the Modeler applied it. `live_undo` is refused before any
-  backup is read, consumed or written, so the only backup is untouched.
-- The active document is read from the bound window title and is reported as
-  unverified, and a modal dialog cannot be observed in `pixels_only` mode.
-- Without the trusted server-owned session every entry fails closed with
-  `error=no_authorized_ui_route`. A read-only startup is valid: with no declared
-  menu routes and an empty action ceiling the session still constructs and
-  `live_status` / `live_screenshot` still work; route presence and action
-  permission are checked when a menu operation is used.
-
-See [docs/ui-control-bootstrap.md](docs/ui-control-bootstrap.md).
+A delivered physical command is not proof of application effect. Partial or
+unknown completion is not proof of no input, and an additional screenshot is
+observation rather than save/reload confirmation. The retained transaction
+engine is not exercised by these unsupported entries. Native Modeler load,
+save/reload/undo, official export and artistic acceptance remain unverified.
+See [the bootstrap contract](docs/ui-control-bootstrap.md).
 
 ## Unreal
 
