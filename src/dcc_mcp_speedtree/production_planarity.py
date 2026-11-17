@@ -109,8 +109,10 @@ def validate_card_planes(full_obj, material_categories, tolerance=0.001):
             vertex_faces.setdefault(vertex, []).append(index)
     pending = set(range(len(card_faces)))
     components = []
-    while pending:
-        todo, connected = [min(pending)], []
+    for seed in range(len(card_faces)):
+        if seed not in pending:
+            continue
+        todo, connected = [seed], []
         while todo:
             face_id = todo.pop()
             if face_id not in pending:

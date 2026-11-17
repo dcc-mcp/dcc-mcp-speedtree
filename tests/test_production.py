@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from dcc_mcp_speedtree import production
 from dcc_mcp_speedtree.graph import SpeedTreeGraph
 from dcc_mcp_speedtree.production import generate_project
 
@@ -132,6 +133,30 @@ def test_texfilename_dependency_is_discovered_and_copied(production_input, tmp_p
     )
 
 
+def test_case_distinct_dependencies_are_rejected_without_partial_output(production_input, tmp_path):
+    source, operations, brief = production_input
+    # On case-sensitive filesystems these can be distinct files. On Windows the
+    # second spelling aliases the first; reject both cases portably.
+    alternate = source.parent / "textures" / "LEAF.png"
+    if not alternate.exists():
+        alternate.write_bytes(b"different asset")
+    brief["dependencies"] = ["textures/leaf.png", "textures/LEAF.png"]
+    output = tmp_path / "case-conflict"
+
+    with pytest.raises(ValueError, match="differ only by case"):
+        generate_project(source, output, operations, brief)
+    assert not output.exists()
+    assert (source.parent / "textures" / "leaf.png").read_bytes() == b"synthetic texture dependency"
+
+
+def test_identical_dependency_references_are_deduplicated(production_input, tmp_path):
+    source, operations, brief = production_input
+    brief["dependencies"] = ["textures/leaf.png", "textures\\leaf.png"]
+    result = generate_project(source, tmp_path / "deduplicated", operations, brief)
+    manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
+    assert [item["path"] for item in manifest["dependencies"]] == ["textures/leaf.png"]
+
+
 def test_missing_texfilename_fails_without_partial_output(production_input, tmp_path):
     source, operations, brief = production_input
     xml = gzip.decompress(source.read_bytes()).decode("utf-8")
@@ -172,6 +197,34 @@ def test_existing_output_is_not_overwritten(production_input, tmp_path):
     with pytest.raises((OSError, ValueError)):
         generate_project(source, output, operations, brief)
     assert (project.read_bytes(), manifest.read_bytes()) == before
+
+
+def test_output_created_during_preparation_is_not_replaced(production_input, tmp_path, monkeypatch):
+    source, operations, brief = production_input
+    output = tmp_path / "concurrent-output"
+    publish = production._publish_no_replace
+
+    def competing_publish(stage, destination):
+        destination.mkdir()
+        publish(stage, destination)
+
+    monkeypatch.setattr(production, "_publish_no_replace", competing_publish)
+    with pytest.raises(OSError):
+        generate_project(source, output, operations, brief)
+    assert output.is_dir() and list(output.iterdir()) == []
+
+
+def test_dangling_output_symlink_is_rejected(production_input, tmp_path):
+    source, operations, brief = production_input
+    output = tmp_path / "output-link"
+    destination = tmp_path / "unintended-target"
+    try:
+        output.symlink_to(destination, target_is_directory=True)
+    except (NotImplementedError, OSError):
+        pytest.skip("creating symlinks is unavailable")
+    with pytest.raises(ValueError, match="symbolic link"):
+        generate_project(source, output, operations, brief)
+    assert output.is_symlink() and not destination.exists()
 
 
 def test_unknown_role_generator_is_rejected_before_writing(production_input, tmp_path):

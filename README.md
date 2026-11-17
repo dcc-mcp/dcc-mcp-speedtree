@@ -76,15 +76,14 @@ material/category mappings. Both tools report their verification limits: they
 do not fit reference images, prove material-to-generator ownership, or replace
 four-view and close-up review by an artist. See the
 [production workflow](src/dcc_mcp_speedtree/skills/speedtree-production/SKILL.md).
-The same skill also offers a full-versus-bare OBJ geometry comparison,
-Blender diagnostic four-view and card previews, and explicit silhouette
-comparison/ranking for existing candidates. Configure a trusted Blender 4+
-executable in `DCC_MCP_BLENDER_EXECUTABLE` before requesting previews.
-`fit_reference_modeler` can search a bounded set of explicitly supplied
-generator values with official full/bare exports, hierarchy and geometry
-gates, mapped-card planarity checks, and four segmented-reference silhouette comparisons. These are
-diagnostic renders and scores; automatic reference segmentation, native
-Modeler view capture and artistic approval remain separate work.
+The same skill also offers a full-versus-bare OBJ geometry comparison and
+`prepare_bare_project` to create a card-removed sibling project for an
+independent official export. Visualization and image comparison belong to
+separate downstream tools discovered through the gateway, not this adapter.
+Record source/export identity, dependency hashes, units and axes, explicit
+material categories and camera settings in the handoff. Automatic cross-host
+fitting and visual acceptance remain unverified. Candidate publication requires
+Windows or Linux with atomic renameat2 support and fails safely elsewhere.
 
 1. `discover_templates` and `inspect_authoring_catalog` enumerate installed
    generator templates and their stored properties. `inspect_graph` and

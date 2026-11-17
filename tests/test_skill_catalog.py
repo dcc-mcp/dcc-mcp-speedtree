@@ -20,18 +20,15 @@ def test_registered_contracts_preserve_read_only_hints_and_packaged_scripts(tmp_
         }
         assert server.load_skill("speedtree-official")
         actions = [a for a in server.list_actions("speedtree") if a.get("skill_name") in skills]
-        assert len(actions) == 25
+        assert len(actions) == 22
         action_names = {action["name"] for action in actions}
         assert {
             "speedtree_production__production_generate",
             "speedtree_production__validate_obj_budget",
-            "speedtree_production__compare_reference_views",
             "speedtree_production__validate_obj_pair",
-            "speedtree_production__generate_diagnostic_views",
-            "speedtree_production__rank_reference_candidates",
             "speedtree_production__validate_branch_structure",
             "speedtree_production__validate_card_planes",
-            "speedtree_production__fit_reference_modeler",
+            "speedtree_production__prepare_bare_project",
         } <= action_names
         plane_action = next(
             action
@@ -45,7 +42,6 @@ def test_registered_contracts_preserve_read_only_hints_and_packaged_scripts(tmp_
             assert action["output_schema"]["type"] == "object"
             mutating = action["name"] in {
                 "speedtree_export__export_batch",
-                "speedtree_production__fit_reference_modeler",
             }
             assert action["annotations"]["read_only_hint"] is not (
                 mutating
@@ -53,9 +49,7 @@ def test_registered_contracts_preserve_read_only_hints_and_packaged_scripts(tmp_
                 or action["name"]
                 in {
                     "speedtree_production__production_generate",
-                    "speedtree_production__compare_reference_views",
-                    "speedtree_production__generate_diagnostic_views",
-                    "speedtree_production__rank_reference_candidates",
+                    "speedtree_production__prepare_bare_project",
                 }
             )
             assert action["annotations"]["destructive_hint"] is mutating

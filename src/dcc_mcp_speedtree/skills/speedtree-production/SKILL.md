@@ -20,7 +20,9 @@ operations using only observed IDs and property paths. `production_generate`
 applies those operations to a separate project in a new output directory, and
 records the supplied brief and operations for review. It does not modify the
 source project. Failures and unsupported fields must be reported rather than
-silently treated as successful edits.
+silently treated as successful edits. Candidate publication requires atomic
+no-replace directory rename: Windows or Linux with renameat2 support. Other
+platforms or unsupported filesystems fail safely rather than overwrite.
 
 The `brief` object can describe `dependencies` (paths relative to the source
 project directory), `references` (an object describing visual references),
@@ -54,15 +56,6 @@ camera and whether it is a native Modeler view or a diagnostic render. Have an
 artist compare the results with the supplied references. Numeric budget
 compliance alone does not establish visual or production acceptance.
 
-For repeatable diagnostic images, configure `DCC_MCP_BLENDER_EXECUTABLE` to a
-trusted local Blender 4 or newer and call `generate_diagnostic_views` on an
-exported OBJ with an explicit material-to-wood/card mapping. The tool produces
-four orthographic views of the full and bare geometry, alpha masks, contact
-sheets, a card close-up and a manifest recording axes, camera scale, hashes and
-warnings. These are Blender diagnostic renders, not native Modeler views.
-Verify texture and opacity resolution and inspect the isolated card visually;
-shared materials may make material-based separation impossible.
-
 Use `validate_obj_budget` for independent readback of an exported Wavefront OBJ.
 Supply a mapping from each `usemtl` name to a category and set the requested
 limits, for example `{"cards": {"min": 800, "max": 800}}` with a total
@@ -78,40 +71,16 @@ export and counts the difference. Confirm the removed generator IDs and both
 export manifests independently: the geometry comparison alone cannot prove
 that the difference contains only cards, or that the exports are LOD0.
 
-`compare_reference_views` compares explicitly segmented front/back/left/right
-reference masks with the corresponding candidate masks. Each view requires a
-foreground mode (`dark`, `light`, or `alpha`) and may crop one region from a
-multi-view sheet. The tool writes overlays and IoU/Dice measurements after
-independently fitting each silhouette into a fixed canvas. Confirm view
-orientation, segmentation and camera settings manually. Normalization removes
-absolute position and scale; this comparison does not generate tree geometry
-or prove material, branch, or visual quality.
+`prepare_bare_project` creates a sibling copy with Leaf, Leaf Mesh and Frond
+generators removed and records removed IDs and both project hashes. It rejects
+non-card children of card generators. Export and validate both copies
+independently; removing cards does not itself prove the geometry or budgets.
 
-To compare multiple already generated candidates, use
-`rank_reference_candidates` with the same four reference masks and explicit
-candidate masks. It writes per-candidate overlays and an auditable ranking.
-The resulting rank only describes silhouette overlap under the supplied
-segmentation and camera correspondence; it does not adjust generator settings
-or prove that the highest-ranked candidate is production ready.
-
-`fit_reference_modeler` runs bounded coordinate descent over explicitly
-supplied, observed generator property values. For each candidate it creates a
-separate SPM, checks the configured trunk/branch graph constraints, removes
-Leaf/Leaf Mesh/Frond generators on another copy, and performs official Modeler
-full/bare OBJ exports. It independently checks the triangle delta, confirms
-that material-separated wood matches the bare OBJ, validates mapped card
-components as approximately planar two-triangle quads, and scores four segmented
-silhouette masks. Configure both `DCC_MCP_SPEEDTREE_EXECUTABLE` and
-`DCC_MCP_BLENDER_EXECUTABLE` to trusted local installations. Set a small
-evaluation count and inspect the asynchronous Core job's candidate evidence.
-The default structure limit permits at most secondary Branch generators;
-set `max_secondary` when a specific generator-count limit applies.
-
-Masks, view directions and search ranges are caller supplied. Coordinate
-descent is not a global optimum or a substitute for visual approval. LOD,
-effective units, UV quality, complete dependency discovery and native Modeler
-views remain unverified. Planarity uses a configurable geometric tolerance and
-the validated material mapping; it does not approve texture or shape. A
-selected candidate is not promoted over the
-reference project. The workflow does not provide a native live Modeler editing
-API, material authoring or per-instance branch/card overrides.
+Use the gateway to discover and select the appropriate Blender host and its
+import, material, camera, render and validation tools. Carry an explicit
+handoff manifest with source and candidate hashes, export identity and
+dependencies, units and axes, category mapping and camera settings. The
+SpeedTree adapter does not launch Blender or implement cross-host fitting,
+reference-image comparison or native Modeler screenshots. Report missing
+downstream capabilities and require human visual review. Unknown units, LOD,
+UVs and asset provenance remain unverified until independently read back.
