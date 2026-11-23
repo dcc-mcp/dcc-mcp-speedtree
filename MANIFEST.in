@@ -2,3 +2,4 @@ recursive-include scripts *.py
 recursive-include docs *.md *.json *.png *.gif
 recursive-include skills *.md
 recursive-include tests *.py
+include TRADEMARKS.md
