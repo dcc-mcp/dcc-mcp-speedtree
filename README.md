@@ -181,3 +181,7 @@ usable imported asset, correct wind, collision, or rendered appearance.
 The repository contains no vendor binaries, licensed sample assets, SDK files,
 or licensing material. Generated vendor sidecars can contain source-machine
 paths; keep raw exports and diagnostics local unless reviewed for sharing.
+
+## Attribution and trademarks
+
+Repository-owned source remains under the existing MIT license in [LICENSE](LICENSE). SpeedTree, exported assets, and host/runtime dependencies retain their own licenses. Commercial distribution contact is welcome and is not required. See [NOTICE](NOTICE) and [TRADEMARKS.md](TRADEMARKS.md).
