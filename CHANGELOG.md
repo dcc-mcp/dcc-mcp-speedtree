@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.4](https://github.com/dcc-mcp/dcc-mcp-speedtree/compare/v0.1.3...v0.1.4) (2026-11-27)
+
+
+### Documentation
+
+* clarify DCC-MCP brand and MIT attribution ([#20](https://github.com/dcc-mcp/dcc-mcp-speedtree/issues/20)) ([7064d4e](https://github.com/dcc-mcp/dcc-mcp-speedtree/commit/7064d4e2c4507ef7d514cdb571a2b9f0a79218eb))
+* refresh the generated DCC-MCP host matrix pointer ([c5736c8](https://github.com/dcc-mcp/dcc-mcp-speedtree/commit/c5736c8e65a0330895b0b92b3f66ca4645e8c5fd))
+
 ## [0.1.3](https://github.com/dcc-mcp/dcc-mcp-speedtree/compare/v0.1.2...v0.1.3) (2026-11-19)
 
 
